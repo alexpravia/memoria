@@ -2,7 +2,7 @@
 
 ## Overall Description
 
-A piece of software that will help people with memory problems (Alzheimer's, dementia, etc.) stay in contact with reality. They will have an **app**, **iPad**, and **interactive mirror** that will remind them every morning when they wake up who they are, who their family is, what they did the past week, what they're going to do, etc.
+A piece of software that will help people with memory problems (Alzheimer's, dementia, etc.) stay in contact with reality. They will have an **app**, **tablet**, and **interactive mirror** that will remind them every morning when they wake up who they are, who their family is, what they did the past week, what they're going to do, etc.
 
 It will be a **real-time context generator** that fills in the gaps of memory: combining modern devices (tablets, interactive mirrors, smart glasses) with the user's digital database (photographs, contacts, past and future events).
 
@@ -29,7 +29,7 @@ It will be a **real-time context generator** that fills in the gaps of memory: c
   This function will have the user throughout their day talk/type what they did, how they felt about it, and just talk about the things they do and enjoy. At the end of the day, the user will try their best to recall how the day went (this is a long shot for some), but regardless — since they talked throughout the day, their day will be recounted to them through the software.
 
 - **🔊 It Is Easier to Listen Than to Read:**
-  Try to keep it **audio intensive**. It will be easier and simpler/more seamless if it is something that can be used passively. Having to be glued to a screen at the end of the day would be kind of going backwards — we don't want to brainwash, we want to help keep their brain functioning well.
+  Try to keep it **audio intensive**. It will be easier and simpler/more seamless if it is something that can be used passively. Having to be glued to a screen at the end of the day would be kind of going backwards — we don't want to brainwash, we want to help keep their brain functioning well. Despite this, old people struggle with hearing so make sure it's still visually applicable.
 
 - **🧩 Brain Stimulation Keeps the Brain Alive:**
   To my knowledge at the moment, a brain that is more stimulated/educated ends up having a better life and lasting longer. Include **brain stimulation activities** (games, news, articles, stories, books, etc.) to keep the brain going every day.
