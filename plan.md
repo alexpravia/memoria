@@ -124,7 +124,12 @@ A centralized system in the co-user dashboard where they can define boundaries f
 - Add events (past, future, recurring)
 - Review AI-flagged items (verification queue)
 - Set sensitivity filters
-- Connect existing services (Google Photos, iCloud, Contacts, Calendar) — stretch goal
+- Connect existing services to auto-import data instead of manual entry:
+  - **Google Photos / iCloud Photos:** Pull in photo library → AI processes, tags faces, organizes by date/people
+  - **Contacts:** Import contacts as "People" with names, phone numbers, relationships
+  - **Calendar (Google Calendar / Apple Calendar):** Sync events automatically — past and future
+  - **Facebook:** Pull photos, friends list, and life events
+  - This massively reduces the co-user's manual setup burden
 
 **Morning Briefing ("Start My Day"):**
 - One button to begin
