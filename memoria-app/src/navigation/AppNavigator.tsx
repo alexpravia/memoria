@@ -18,11 +18,14 @@ import SetupUserLoginScreen from "../screens/couser/SetupUserLoginScreen";
 import ImportContactsScreen from "../screens/couser/import/ImportContactsScreen";
 import ImportCalendarScreen from "../screens/couser/import/ImportCalendarScreen";
 import ImportPhotosScreen from "../screens/couser/import/ImportPhotosScreen";
+import SensitivityFiltersScreen from "../screens/couser/SensitivityFiltersScreen";
+import FlagQueueScreen from "../screens/couser/FlagQueueScreen";
 
 // User screens
 import UserHomeScreen from "../screens/user/UserHomeScreen";
 import BriefingScreen from "../screens/user/BriefingScreen";
 import EmergencyCardScreen from "../screens/user/EmergencyCardScreen";
+import AssistantScreen from "../screens/user/AssistantScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -52,6 +55,8 @@ function CoUserStack() {
           <Stack.Screen name="ImportContacts" component={ImportContactsScreen} />
           <Stack.Screen name="ImportCalendar" component={ImportCalendarScreen} />
           <Stack.Screen name="ImportPhotos" component={ImportPhotosScreen} />
+          <Stack.Screen name="SensitivityFilters" component={SensitivityFiltersScreen} />
+          <Stack.Screen name="FlagQueue" component={FlagQueueScreen} />
         </>
       ) : (
         // Dashboard - user profile exists
@@ -64,6 +69,8 @@ function CoUserStack() {
           <Stack.Screen name="ImportContacts" component={ImportContactsScreen} />
           <Stack.Screen name="ImportCalendar" component={ImportCalendarScreen} />
           <Stack.Screen name="ImportPhotos" component={ImportPhotosScreen} />
+          <Stack.Screen name="SensitivityFilters" component={SensitivityFiltersScreen} />
+          <Stack.Screen name="FlagQueue" component={FlagQueueScreen} />
         </>
       )}
     </Stack.Navigator>
@@ -76,6 +83,7 @@ function UserStack() {
       <Stack.Screen name="UserHome" component={UserHomeScreen} />
       <Stack.Screen name="Briefing" component={BriefingScreen} />
       <Stack.Screen name="EmergencyCard" component={EmergencyCardScreen} />
+      <Stack.Screen name="Assistant" component={AssistantScreen} />
     </Stack.Navigator>
   );
 }

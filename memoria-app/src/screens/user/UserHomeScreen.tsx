@@ -1,14 +1,26 @@
-import React from "react";
+import React, { useEffect } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useAuth } from "../../context/AuthContext";
+import { requestNotificationPermissions, scheduleEventReminders } from "../../lib/notifications";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
 export default function UserHomeScreen({ navigation }: Props) {
-  const { signOut } = useAuth();
+  const { userId, signOut } = useAuth();
+
+  useEffect(() => {
+    async function setupReminders() {
+      if (!userId) return;
+      const granted = await requestNotificationPermissions();
+      if (granted) {
+        await scheduleEventReminders(userId);
+      }
+    }
+    setupReminders();
+  }, [userId]);
 
   return (
     <View style={styles.container}>
@@ -19,6 +31,13 @@ export default function UserHomeScreen({ navigation }: Props) {
         onPress={() => navigation.navigate("Briefing")}
       >
         <Text style={styles.startButtonText}>Start My Day</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.assistantButton}
+        onPress={() => navigation.navigate("Assistant")}
+      >
+        <Text style={styles.assistantButtonText}>💬 Ask Me Anything</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -62,6 +81,22 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: "bold",
     color: "#ffffff",
+  },
+  assistantButton: {
+    backgroundColor: "#2a2a4a",
+    paddingVertical: 22,
+    paddingHorizontal: 40,
+    borderRadius: 16,
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 20,
+    borderWidth: 2,
+    borderColor: "#b388ff",
+  },
+  assistantButtonText: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#b388ff",
   },
   emergencyButton: {
     backgroundColor: "#2a2a4a",

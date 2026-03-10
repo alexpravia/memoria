@@ -29,8 +29,24 @@
 - Built the **morning briefing screen**, which pulls the user's profile, life facts, people, and events from the database and presents them one slide at a time with large text. Each slide is read aloud using text-to-speech, and the user can go forward, go back, or replay any slide with simple controls and a progress bar at the top
 - Built the **emergency context card**, which displays the user's name, where they live, and their emergency contact in large, clear text — designed to be pulled up quickly if the user is confused or disoriented
 
+---
+
+## March 9, 2026
+
+### Phase 1C: AI & Safety Layer
+
+- Built the **sensitivity filters screen** — the co-user can now define boundaries for what the AI is allowed to show or mention, with three filter types: specific people to avoid, topics to avoid (like "the hospital" or a person's name), and entire time periods to skip. These filters apply globally across the entire app — briefings, the AI assistant, and any future features. Filters are listed with delete capability, and each one can include a note explaining why it was set
+- Built the **verification / flag queue screen** — a review interface where the co-user can see all AI-flagged items that need approval before they reach the user. Each item shows its type (media, person, event, journal, mood) with a description, and the co-user can approve, reject, or hide it. Previously reviewed items are shown separately. The co-user dashboard now displays a red badge with the count of pending items
+- Built the **conversational AI assistant** — the user can now tap "Ask Me Anything" from the home screen and ask questions about themselves, their family, or their schedule in a simple chat interface. The assistant pulls the user's profile, life facts, people, and events from the database, strips out anything blocked by sensitivity filters, and sends the filtered context to an LLM with a system prompt that enforces warmth, simplicity, and honesty. Responses are displayed in large text bubbles and read aloud automatically using text-to-speech
+- Built the **AI service layer** (`assistant.ts`) with a provider-agnostic architecture — the context-fetching, sensitivity filtering, and prompt building all happen on the client, and the actual LLM call goes through a single function that can be swapped to any provider without touching the rest of the codebase. Currently uses OpenAI's `gpt-4o-mini` through a Supabase Edge Function, but changing to a self-hosted model later only requires updating three environment variables (`LLM_API_URL`, `LLM_API_KEY`, `LLM_MODEL`)
+- Built and deployed the **Supabase Edge Function** (`ask-assistant`) — a serverless function that proxies requests to any OpenAI-compatible LLM API. It accepts a question and system prompt, calls the model, and returns the answer. Deployed to Supabase's edge network and confirmed working with real queries
+- Built the **push notification system** — when the user opens the app, it requests notification permissions and automatically schedules local reminders for all of today's events. Each event gets two notifications: one an hour before and one at event time. Notifications include the event title and description, and all previously scheduled notifications are cleared and rescheduled fresh each time the app opens to avoid duplicates
+- Reorganized the **co-user dashboard** with a new "Safety & Settings" section that groups the review queue, sensitivity filters, and login setup together, with distinct color-coded accents (red for safety features, purple for imports)
+
 ### Next Steps
-1. Fix the small kinks in the device import screens
-2. Build **Phase 1C** — conversational AI so the user can ask questions about themselves, sensitivity filters for the co-user to set boundaries on what the AI can surface, a verification queue for reviewing flagged content, and push notifications for gentle reminders throughout the day
-3. Begin **Phase 2** — voice journaling and the end-of-day recall exercise
-4. Set up proper **photo uploads to Supabase Storage** so media persists across devices instead of referencing local file paths
+1. Fully test the mobile app end-to-end and fix any bugs that come up across all screens
+2. Continue developing the **AI chatbot** — expand its abilities, improve response quality, and explore adding voice input
+3. Polish the **UI** — refine the visual design across screens to make the experience feel more complete and cohesive
+4. Fix the small kinks in the device import screens from Phase 1B
+5. Set up proper **photo uploads to Supabase Storage** so media persists across devices instead of referencing local file paths
+6. Begin **Phase 2** — voice journaling and the end-of-day recall exercise

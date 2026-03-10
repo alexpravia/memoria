@@ -23,6 +23,7 @@ export default function CoUserHomeScreen({ navigation }: Props) {
     people: 0,
     events: 0,
   });
+  const [pendingFlags, setPendingFlags] = useState(0);
 
   useEffect(() => {
     if (userId) loadData();
@@ -57,6 +58,14 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       people: people || 0,
       events: events || 0,
     });
+
+    const { count: flagCount } = await supabase
+      .from("flag_queue")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId)
+      .eq("status", "pending");
+
+    setPendingFlags(flagCount || 0);
   }
 
   async function handleSignOut() {
@@ -132,9 +141,32 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         <Text style={styles.actionButtonText}>📸 Import Photos</Text>
       </TouchableOpacity>
 
-      {/* Settings section */}
+      {/* Safety & Settings */}
+      <Text style={styles.sectionTitle}>Safety & Settings</Text>
+
       <TouchableOpacity
-        style={[styles.actionButton, styles.setupLoginButton]}
+        style={styles.safetyButton}
+        onPress={() => navigation.navigate("FlagQueue")}
+      >
+        <View style={styles.flagRow}>
+          <Text style={styles.actionButtonText}>🚩 Review Queue</Text>
+          {pendingFlags > 0 && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>{pendingFlags}</Text>
+            </View>
+          )}
+        </View>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.safetyButton}
+        onPress={() => navigation.navigate("SensitivityFilters")}
+      >
+        <Text style={styles.actionButtonText}>🛡️ Sensitivity Filters</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.safetyButton}
         onPress={() => navigation.navigate("SetupUserLogin")}
       >
         <Text style={styles.actionButtonText}>🔑 Set Up Their Login</Text>
@@ -226,9 +258,33 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: "#b388ff",
   },
-  setupLoginButton: {
-    borderLeftColor: "#b388ff",
-    marginTop: 8,
+  safetyButton: {
+    backgroundColor: "#2a2a4a",
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    marginBottom: 12,
+    borderLeftWidth: 4,
+    borderLeftColor: "#ff6b6b",
+  },
+  flagRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  badge: {
+    backgroundColor: "#ff6b6b",
+    borderRadius: 12,
+    minWidth: 24,
+    height: 24,
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 8,
+  },
+  badgeText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "bold",
   },
   signOutText: {
     fontSize: 16,
