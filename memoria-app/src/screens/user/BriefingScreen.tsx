@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ActivityIndicator,
   Image,
+  Animated,
 } from "react-native";
 import * as Speech from "expo-speech";
 import { supabase } from "../../lib/supabase";
@@ -24,6 +25,8 @@ export default function BriefingScreen({ navigation }: any) {
   const [currentSlide, setCurrentSlide] = useState(0);
   const [loading, setLoading] = useState(true);
   const [speaking, setSpeaking] = useState(false);
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(30)).current;
 
   useEffect(() => {
     buildBriefing();
@@ -34,9 +37,32 @@ export default function BriefingScreen({ navigation }: any) {
 
   useEffect(() => {
     if (slides.length > 0 && currentSlide < slides.length) {
+      animateSlide();
       speakSlide(slides[currentSlide]);
     }
   }, [currentSlide, slides]);
+
+  function animateSlide() {
+    fadeAnim.setValue(0);
+    slideAnim.setValue(30);
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.timing(slideAnim, {
+        toValue: 0,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }
+
+  function handleExit() {
+    Speech.stop();
+    navigation.goBack();
+  }
 
   async function buildBriefing() {
     if (!userId) return;
@@ -245,15 +271,21 @@ export default function BriefingScreen({ navigation }: any) {
         />
       </View>
 
+      <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
+        <Text style={styles.exitButtonText}>✕</Text>
+      </TouchableOpacity>
+
       {/* Content */}
       <View style={styles.slideContent}>
-        {slide.photoUrl && (
-          <Image source={{ uri: slide.photoUrl }} style={styles.photo} />
-        )}
-        <Text style={styles.mainText}>{slide.text}</Text>
-        {slide.subtitle && (
-          <Text style={styles.subtitleText}>{slide.subtitle}</Text>
-        )}
+        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+          {slide.photoUrl && (
+            <Image source={{ uri: slide.photoUrl }} style={styles.photo} />
+          )}
+          <Text style={styles.mainText}>{slide.text}</Text>
+          {slide.subtitle && (
+            <Text style={styles.subtitleText}>{slide.subtitle}</Text>
+          )}
+        </Animated.View>
       </View>
 
       {/* Controls */}
@@ -363,5 +395,22 @@ const styles = StyleSheet.create({
   },
   replayButtonText: {
     fontSize: 28,
+  },
+  exitButton: {
+    position: "absolute",
+    top: 54,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "#2a2a4a",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  exitButtonText: {
+    color: "#ff6b6b",
+    fontSize: 20,
+    fontWeight: "bold",
   },
 });

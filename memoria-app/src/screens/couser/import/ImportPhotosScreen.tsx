@@ -64,12 +64,17 @@ export default function ImportPhotosScreen({ navigation }: Props) {
       sortBy: [MediaLibrary.SortBy.creationTime],
     });
 
-    const newPhotos: PhotoItem[] = result.assets.map((a) => ({
-      id: a.id,
-      uri: a.uri,
-      creationTime: a.creationTime,
-      selected: false,
-    }));
+    const newPhotos: PhotoItem[] = await Promise.all(
+      result.assets.map(async (a) => {
+        const info = await MediaLibrary.getAssetInfoAsync(a.id);
+        return {
+          id: a.id,
+          uri: info.localUri || a.uri,
+          creationTime: a.creationTime,
+          selected: false,
+        };
+      })
+    );
 
     setPhotos((prev) => [...prev, ...newPhotos]);
     setEndCursor(result.endCursor);

@@ -43,10 +43,35 @@
 - Built the **push notification system** — when the user opens the app, it requests notification permissions and automatically schedules local reminders for all of today's events. Each event gets two notifications: one an hour before and one at event time. Notifications include the event title and description, and all previously scheduled notifications are cleared and rescheduled fresh each time the app opens to avoid duplicates
 - Reorganized the **co-user dashboard** with a new "Safety & Settings" section that groups the review queue, sensitivity filters, and login setup together, with distinct color-coded accents (red for safety features, purple for imports)
 
+---
+
+## March 13, 2026
+
+### Bug Fixes & UX Improvements (Co-User Side)
+
+- Made the **stat cards tappable** — tapping Life Facts, People, or Events now opens a dedicated **view screen** that lists everything that's been saved, instead of going straight to the "add" form. Each view screen shows the data in styled cards and has an "Add More" button at the bottom
+- Created **ViewLifeFactsScreen**, **ViewPeopleScreen**, **ViewEventsScreen**, and **ViewPhotosScreen** — four new screens that let the co-user review all the data they've entered at a glance
+- Added a **Photos stat card** to the dashboard alongside the other three, showing the total number of imported photos. All four stat cards now sit in a single row
+- Added **← Back and ✕ Exit buttons** to the Life Facts, People, and Events onboarding screens — the co-user is no longer forced to step through all three screens linearly and can go back or exit to the dashboard at any time
+- Fixed the **Import Photos crash** — the app was using `ph://` URIs from the iOS photo library, which React Native can't render. Now resolves each photo to a `file://` local URI using `getAssetInfoAsync` before displaying
+- Fixed **duplicate imports** — the Import Contacts and Import Calendar screens now show already-imported items dimmed with an "Already imported" badge instead of hiding them. New items appear at the top and remain fully selectable
+- Added a **"Grant Access to More Contacts"** button to the Import Contacts screen that opens iOS Settings, so the co-user can expand contact access beyond the initial limited selection (iOS defaults to "Limited Access" for contacts)
+- Added a **permission denied screen** for contacts — if access was denied, the screen now shows a clear message with an "Open Settings" button instead of just an alert
+- Changed the **"Set Up Their Login"** button to dynamically show **"Set Up Another User"** if a login has already been created, by checking the `auth_id` field on the user profile
+
+### Bug Fixes & UX Improvements (User Side)
+
+- Fixed the **emergency card text overflow** — long emergency contact names now auto-shrink to fit on one line using `adjustsFontSizeToFit` instead of wrapping awkwardly
+- Added **emergency contact phone number** display to the "Who Am I?" screen, shown in purple below the contact name and relationship
+- Added an **exit button (✕)** to the morning briefing screen so the user can close it at any time without stepping through every slide
+- Added **slide-in animations** to the morning briefing — each slide's text now fades in and floats up over 600ms, making the experience feel smoother and less abrupt. TTS triggers as the animation plays
+
+### Infrastructure
+
+- Resolved Expo tunnel mode setup by installing `@expo/ngrok` locally with `--legacy-peer-deps` to bypass peer dependency conflicts
+- Removed accidental `react-dom` and `react-native-web` dependencies and the `"web"` config from `app.json` after a failed web support install broke the build
+
 ### Next Steps
-1. Fully test the mobile app end-to-end and fix any bugs that come up across all screens
-2. Continue developing the **AI chatbot** — expand its abilities, improve response quality, and explore adding voice input
-3. Polish the **UI** — refine the visual design across screens to make the experience feel more complete and cohesive
-4. Fix the small kinks in the device import screens from Phase 1B
-5. Set up proper **photo uploads to Supabase Storage** so media persists across devices instead of referencing local file paths
-6. Begin **Phase 2** — voice journaling and the end-of-day recall exercise
+1. Continue **testing and fixing bugs** across both the co-user and user experiences
+2. Verify all import flows work correctly end-to-end on a real device
+3. Test the full user journey — login, briefing, emergency card, and AI assistant

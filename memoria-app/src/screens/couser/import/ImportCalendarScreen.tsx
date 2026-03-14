@@ -24,6 +24,7 @@ interface CalendarEvent {
   endDate: string;
   notes: string;
   selected: boolean;
+  alreadyImported: boolean;
 }
 
 export default function ImportCalendarScreen({ navigation }: Props) {
@@ -62,20 +63,36 @@ export default function ImportCalendarScreen({ navigation }: Props) {
       endDate
     );
 
+    // Fetch already-imported events to filter them out
+    const { data: existingEvents } = await supabase
+      .from("events")
+      .select("title, event_date")
+      .eq("user_id", userId);
+
+    const existingKeys = new Set(
+      (existingEvents || []).map(
+        (e) => `${e.title.toLowerCase()}|${e.event_date}`
+      )
+    );
+
     const mapped: CalendarEvent[] = calEvents
       .filter((e) => e.title)
-      .map((e) => ({
-        id: e.id,
-        title: e.title || "",
-        startDate: String(e.startDate),
-        endDate: String(e.endDate),
-        notes: e.notes || "",
-        selected: false,
-      }))
-      .sort(
-        (a, b) =>
-          new Date(a.startDate).getTime() - new Date(b.startDate).getTime()
-      );
+      .map((e) => {
+        const key = `${(e.title || "").toLowerCase()}|${String(e.startDate)}`;
+        return {
+          id: e.id,
+          title: e.title || "",
+          startDate: String(e.startDate),
+          endDate: String(e.endDate),
+          notes: e.notes || "",
+          selected: false,
+          alreadyImported: existingKeys.has(key),
+        };
+      })
+      .sort((a, b) => {
+        if (a.alreadyImported !== b.alreadyImported) return a.alreadyImported ? 1 : -1;
+        return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
+      });
 
     setEvents(mapped);
     setLoading(false);
@@ -83,13 +100,16 @@ export default function ImportCalendarScreen({ navigation }: Props) {
 
   function toggleEvent(id: string) {
     setEvents(
-      events.map((e) => (e.id === id ? { ...e, selected: !e.selected } : e))
+      events.map((e) =>
+        e.id === id && !e.alreadyImported ? { ...e, selected: !e.selected } : e
+      )
     );
   }
 
   function selectAll() {
-    const allSelected = events.every((e) => e.selected);
-    setEvents(events.map((e) => ({ ...e, selected: !allSelected })));
+    const selectable = events.filter((e) => !e.alreadyImported);
+    const allSelected = selectable.length > 0 && selectable.every((e) => e.selected);
+    setEvents(events.map((e) => e.alreadyImported ? e : { ...e, selected: !allSelected }));
   }
 
   async function handleImport() {
@@ -179,24 +199,32 @@ export default function ImportCalendarScreen({ navigation }: Props) {
               style={[
                 styles.eventItem,
                 item.selected && styles.eventItemSelected,
+                item.alreadyImported && styles.eventItemImported,
               ]}
               onPress={() => toggleEvent(item.id)}
+              disabled={item.alreadyImported}
             >
               <View style={styles.eventInfo}>
-                <Text style={styles.eventTitle}>{item.title}</Text>
+                <Text style={[styles.eventTitle, item.alreadyImported && styles.importedText]}>{item.title}</Text>
                 <Text style={styles.eventDate}>
                   {formatDate(item.startDate)}
                 </Text>
-                {isPast && <Text style={styles.pastBadge}>Past</Text>}
+                {item.alreadyImported ? (
+                  <Text style={styles.importedBadge}>Already imported</Text>
+                ) : isPast ? (
+                  <Text style={styles.pastBadge}>Past</Text>
+                ) : null}
               </View>
-              <View
-                style={[
-                  styles.checkbox,
-                  item.selected && styles.checkboxChecked,
-                ]}
-              >
-                {item.selected && <Text style={styles.checkmark}>✓</Text>}
-              </View>
+              {!item.alreadyImported && (
+                <View
+                  style={[
+                    styles.checkbox,
+                    item.selected && styles.checkboxChecked,
+                  ]}
+                >
+                  {item.selected && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+              )}
             </TouchableOpacity>
           );
         }}
@@ -349,5 +377,17 @@ const styles = StyleSheet.create({
   cancelText: {
     fontSize: 16,
     color: "#888",
+  },
+  eventItemImported: {
+    opacity: 0.5,
+  },
+  importedText: {
+    color: "#888",
+  },
+  importedBadge: {
+    fontSize: 12,
+    color: "#7c4dff",
+    marginTop: 4,
+    fontStyle: "italic",
   },
 });

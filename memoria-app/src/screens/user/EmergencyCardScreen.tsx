@@ -9,6 +9,7 @@ export default function EmergencyCardScreen({ navigation }: any) {
   const [location, setLocation] = useState("");
   const [contactName, setContactName] = useState("");
   const [contactRelation, setContactRelation] = useState("");
+  const [contactPhone, setContactPhone] = useState("");
 
   useEffect(() => {
     loadEmergencyInfo();
@@ -31,7 +32,7 @@ export default function EmergencyCardScreen({ navigation }: any) {
     // Get the co-user as emergency contact
     const { data: coUser } = await supabase
       .from("co_users")
-      .select("full_name, relationship")
+      .select("full_name, relationship, phone")
       .eq("user_id", userId)
       .limit(1)
       .single();
@@ -39,6 +40,7 @@ export default function EmergencyCardScreen({ navigation }: any) {
     if (coUser) {
       setContactName(coUser.full_name);
       setContactRelation(coUser.relationship);
+      setContactPhone(coUser.phone || "");
     }
   }
 
@@ -60,8 +62,11 @@ export default function EmergencyCardScreen({ navigation }: any) {
         {contactName ? (
           <>
             <Text style={styles.label}>MY EMERGENCY CONTACT</Text>
-            <Text style={styles.value}>{contactName}</Text>
+            <Text style={styles.contactValue} numberOfLines={1} adjustsFontSizeToFit>{contactName}</Text>
             <Text style={styles.relation}>({contactRelation})</Text>
+            {contactPhone ? (
+              <Text style={styles.phone}>{contactPhone}</Text>
+            ) : null}
           </>
         ) : null}
       </View>
@@ -109,10 +114,23 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#fff",
   },
+  contactValue: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#fff",
+    minFontSize: 16,
+  },
   relation: {
     fontSize: 18,
     color: "#e0e0e0",
     marginTop: 4,
+  },
+  phone: {
+    fontSize: 20,
+    color: "#7c4dff",
+    marginTop: 8,
+    fontWeight: "600",
+    letterSpacing: 1,
   },
   backButton: {
     backgroundColor: "#7c4dff",

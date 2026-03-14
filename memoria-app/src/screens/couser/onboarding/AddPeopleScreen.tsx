@@ -93,6 +93,14 @@ export default function AddPeopleScreen({ navigation, route }: Props) {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+      <View style={styles.headerRow}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => navigation.navigate("CoUserHome")}>
+          <Text style={styles.exitText}>✕</Text>
+        </TouchableOpacity>
+      </View>
       <Text style={styles.title}>Important People</Text>
       <Text style={styles.subtitle}>
         Add the people in their life they should know about
@@ -298,5 +306,21 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "600",
     color: "#fff",
+  },
+  headerRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  backText: {
+    color: "#b388ff",
+    fontSize: 16,
+    fontWeight: "600",
+  },
+  exitText: {
+    color: "#ff6b6b",
+    fontSize: 20,
+    fontWeight: "bold",
   },
 });

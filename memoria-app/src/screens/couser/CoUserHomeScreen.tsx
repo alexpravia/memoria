@@ -22,8 +22,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
     lifeFacts: 0,
     people: 0,
     events: 0,
+    photos: 0,
   });
   const [pendingFlags, setPendingFlags] = useState(0);
+  const [hasUserLogin, setHasUserLogin] = useState(false);
 
   useEffect(() => {
     if (userId) loadData();
@@ -32,11 +34,14 @@ export default function CoUserHomeScreen({ navigation }: Props) {
   async function loadData() {
     const { data: user } = await supabase
       .from("users")
-      .select("full_name")
+      .select("full_name, auth_id")
       .eq("id", userId)
       .single();
 
-    if (user) setUserName(user.full_name);
+    if (user) {
+      setUserName(user.full_name);
+      setHasUserLogin(!!user.auth_id);
+    }
 
     const { count: lifeFacts } = await supabase
       .from("life_facts")
@@ -53,10 +58,16 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       .select("*", { count: "exact", head: true })
       .eq("user_id", userId);
 
+    const { count: photos } = await supabase
+      .from("media")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", userId);
+
     setStats({
       lifeFacts: lifeFacts || 0,
       people: people || 0,
       events: events || 0,
+      photos: photos || 0,
     });
 
     const { count: flagCount } = await supabase
@@ -81,18 +92,22 @@ export default function CoUserHomeScreen({ navigation }: Props) {
 
       {/* Stats */}
       <View style={styles.statsRow}>
-        <View style={styles.statCard}>
+        <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate("ViewLifeFacts")}>
           <Text style={styles.statNumber}>{stats.lifeFacts}</Text>
           <Text style={styles.statLabel}>Life Facts</Text>
-        </View>
-        <View style={styles.statCard}>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate("ViewPeople")}>
           <Text style={styles.statNumber}>{stats.people}</Text>
           <Text style={styles.statLabel}>People</Text>
-        </View>
-        <View style={styles.statCard}>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate("ViewEvents")}>
           <Text style={styles.statNumber}>{stats.events}</Text>
           <Text style={styles.statLabel}>Events</Text>
-        </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate("ViewPhotos")}>
+          <Text style={styles.statNumber}>{stats.photos}</Text>
+          <Text style={styles.statLabel}>Photos</Text>
+        </TouchableOpacity>
       </View>
 
       {/* Actions */}
@@ -169,7 +184,9 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         style={styles.safetyButton}
         onPress={() => navigation.navigate("SetupUserLogin")}
       >
-        <Text style={styles.actionButtonText}>🔑 Set Up Their Login</Text>
+        <Text style={styles.actionButtonText}>
+          {hasUserLogin ? "🔑 Set Up Another User" : "🔑 Set Up Their Login"}
+        </Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
@@ -209,17 +226,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#2a2a4a",
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
     alignItems: "center",
-    marginHorizontal: 4,
+    marginHorizontal: 3,
   },
   statNumber: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: "bold",
     color: "#7c4dff",
   },
   statLabel: {
-    fontSize: 13,
+    fontSize: 11,
     color: "#b388ff",
     marginTop: 4,
   },

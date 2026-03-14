@@ -20,6 +20,10 @@ import ImportCalendarScreen from "../screens/couser/import/ImportCalendarScreen"
 import ImportPhotosScreen from "../screens/couser/import/ImportPhotosScreen";
 import SensitivityFiltersScreen from "../screens/couser/SensitivityFiltersScreen";
 import FlagQueueScreen from "../screens/couser/FlagQueueScreen";
+import ViewLifeFactsScreen from "../screens/couser/ViewLifeFactsScreen";
+import ViewPeopleScreen from "../screens/couser/ViewPeopleScreen";
+import ViewEventsScreen from "../screens/couser/ViewEventsScreen";
+import ViewPhotosScreen from "../screens/couser/ViewPhotosScreen";
 
 // User screens
 import UserHomeScreen from "../screens/user/UserHomeScreen";
@@ -57,6 +61,10 @@ function CoUserStack() {
           <Stack.Screen name="ImportPhotos" component={ImportPhotosScreen} />
           <Stack.Screen name="SensitivityFilters" component={SensitivityFiltersScreen} />
           <Stack.Screen name="FlagQueue" component={FlagQueueScreen} />
+          <Stack.Screen name="ViewLifeFacts" component={ViewLifeFactsScreen} />
+          <Stack.Screen name="ViewPeople" component={ViewPeopleScreen} />
+          <Stack.Screen name="ViewEvents" component={ViewEventsScreen} />
+          <Stack.Screen name="ViewPhotos" component={ViewPhotosScreen} />
         </>
       ) : (
         // Dashboard - user profile exists
@@ -71,6 +79,10 @@ function CoUserStack() {
           <Stack.Screen name="ImportPhotos" component={ImportPhotosScreen} />
           <Stack.Screen name="SensitivityFilters" component={SensitivityFiltersScreen} />
           <Stack.Screen name="FlagQueue" component={FlagQueueScreen} />
+          <Stack.Screen name="ViewLifeFacts" component={ViewLifeFactsScreen} />
+          <Stack.Screen name="ViewPeople" component={ViewPeopleScreen} />
+          <Stack.Screen name="ViewEvents" component={ViewEventsScreen} />
+          <Stack.Screen name="ViewPhotos" component={ViewPhotosScreen} />
         </>
       )}
     </Stack.Navigator>

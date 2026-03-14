@@ -7,6 +7,8 @@ import {
   Alert,
   FlatList,
   ActivityIndicator,
+  Linking,
+  Platform,
 } from "react-native";
 import * as Contacts from "expo-contacts";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
@@ -23,6 +25,7 @@ interface ContactItem {
   phone: string;
   email: string;
   selected: boolean;
+  alreadyImported: boolean;
 }
 
 export default function ImportContactsScreen({ navigation }: Props) {
@@ -30,18 +33,17 @@ export default function ImportContactsScreen({ navigation }: Props) {
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
 
   useEffect(() => {
     loadContacts();
   }, []);
 
   async function loadContacts() {
+    setLoading(true);
     const { status } = await Contacts.requestPermissionsAsync();
     if (status !== "granted") {
-      Alert.alert(
-        "Permission Needed",
-        "We need access to contacts to import them. You can enable this in Settings."
-      );
+      setPermissionDenied(true);
       setLoading(false);
       return;
     }
@@ -54,6 +56,16 @@ export default function ImportContactsScreen({ navigation }: Props) {
       ],
     });
 
+    // Fetch already-imported people to mark them
+    const { data: existingPeople } = await supabase
+      .from("people")
+      .select("full_name")
+      .eq("user_id", userId);
+
+    const existingNames = new Set(
+      (existingPeople || []).map((p) => p.full_name.toLowerCase())
+    );
+
     const mapped: ContactItem[] = data
       .filter((c) => c.name)
       .map((c) => ({
@@ -62,24 +74,38 @@ export default function ImportContactsScreen({ navigation }: Props) {
         phone: c.phoneNumbers?.[0]?.number || "",
         email: c.emails?.[0]?.email || "",
         selected: false,
+        alreadyImported: existingNames.has((c.name || "").toLowerCase()),
       }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => {
+        if (a.alreadyImported !== b.alreadyImported) return a.alreadyImported ? 1 : -1;
+        return a.name.localeCompare(b.name);
+      });
 
     setContacts(mapped);
+    setPermissionDenied(false);
     setLoading(false);
+  }
+
+  function openSettings() {
+    if (Platform.OS === "ios") {
+      Linking.openURL("app-settings:");
+    } else {
+      Linking.openSettings();
+    }
   }
 
   function toggleContact(id: string) {
     setContacts(
       contacts.map((c) =>
-        c.id === id ? { ...c, selected: !c.selected } : c
+        c.id === id && !c.alreadyImported ? { ...c, selected: !c.selected } : c
       )
     );
   }
 
   function selectAll() {
-    const allSelected = contacts.every((c) => c.selected);
-    setContacts(contacts.map((c) => ({ ...c, selected: !allSelected })));
+    const selectable = contacts.filter((c) => !c.alreadyImported);
+    const allSelected = selectable.length > 0 && selectable.every((c) => c.selected);
+    setContacts(contacts.map((c) => c.alreadyImported ? c : { ...c, selected: !allSelected }));
   }
 
   async function handleImport() {
@@ -119,6 +145,8 @@ export default function ImportContactsScreen({ navigation }: Props) {
 
   const selectedCount = contacts.filter((c) => c.selected).length;
 
+  const availableCount = contacts.filter((c) => !c.alreadyImported).length;
+
   if (loading) {
     return (
       <View style={styles.centered}>
@@ -128,12 +156,31 @@ export default function ImportContactsScreen({ navigation }: Props) {
     );
   }
 
+  if (permissionDenied) {
+    return (
+      <View style={styles.centered}>
+        <Text style={styles.permissionTitle}>Contact Access Needed</Text>
+        <Text style={styles.permissionText}>
+          We need access to your contacts to import them. Please grant access in Settings.
+        </Text>
+        <TouchableOpacity style={styles.settingsButton} onPress={openSettings}>
+          <Text style={styles.settingsButtonText}>Open Settings</Text>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
+          <Text style={styles.cancelText}>Cancel</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Import Contacts</Text>
         <Text style={styles.subtitle}>
-          Select the people important to your loved one
+          {availableCount === 0
+            ? "All visible contacts have been imported. Grant access to more contacts in Settings."
+            : "Select the people important to your loved one"}
         </Text>
 
         <View style={styles.headerActions}>
@@ -144,6 +191,10 @@ export default function ImportContactsScreen({ navigation }: Props) {
           </TouchableOpacity>
           <Text style={styles.countText}>{selectedCount} selected</Text>
         </View>
+
+        <TouchableOpacity style={styles.grantMoreButton} onPress={openSettings}>
+          <Text style={styles.grantMoreText}>Grant Access to More Contacts</Text>
+        </TouchableOpacity>
       </View>
 
       <FlatList
@@ -155,23 +206,29 @@ export default function ImportContactsScreen({ navigation }: Props) {
             style={[
               styles.contactItem,
               item.selected && styles.contactItemSelected,
+              item.alreadyImported && styles.contactItemImported,
             ]}
             onPress={() => toggleContact(item.id)}
+            disabled={item.alreadyImported}
           >
             <View style={styles.contactInfo}>
-              <Text style={styles.contactName}>{item.name}</Text>
-              {item.phone ? (
+              <Text style={[styles.contactName, item.alreadyImported && styles.importedText]}>{item.name}</Text>
+              {item.alreadyImported ? (
+                <Text style={styles.importedBadge}>Already imported</Text>
+              ) : item.phone ? (
                 <Text style={styles.contactDetail}>{item.phone}</Text>
               ) : null}
             </View>
-            <View
-              style={[
-                styles.checkbox,
-                item.selected && styles.checkboxChecked,
-              ]}
-            >
-              {item.selected && <Text style={styles.checkmark}>✓</Text>}
-            </View>
+            {!item.alreadyImported && (
+              <View
+                style={[
+                  styles.checkbox,
+                  item.selected && styles.checkboxChecked,
+                ]}
+              >
+                {item.selected && <Text style={styles.checkmark}>✓</Text>}
+              </View>
+            )}
           </TouchableOpacity>
         )}
       />
@@ -317,5 +374,54 @@ const styles = StyleSheet.create({
   cancelText: {
     fontSize: 16,
     color: "#888",
+  },
+  contactItemImported: {
+    opacity: 0.5,
+  },
+  importedText: {
+    color: "#888",
+  },
+  importedBadge: {
+    fontSize: 12,
+    color: "#7c4dff",
+    marginTop: 4,
+    fontStyle: "italic",
+  },
+  permissionTitle: {
+    fontSize: 24,
+    fontWeight: "bold",
+    color: "#b388ff",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  permissionText: {
+    fontSize: 16,
+    color: "#e0e0e0",
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 24,
+    paddingHorizontal: 20,
+  },
+  settingsButton: {
+    backgroundColor: "#7c4dff",
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: 12,
+    marginBottom: 12,
+  },
+  settingsButtonText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  grantMoreButton: {
+    marginTop: 12,
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  grantMoreText: {
+    fontSize: 14,
+    color: "#7c4dff",
+    fontWeight: "600",
   },
 });
