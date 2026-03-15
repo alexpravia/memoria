@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import * as Speech from "expo-speech";
 import { useAuth } from "../../context/AuthContext";
@@ -17,6 +18,7 @@ import { askAssistant } from "../../lib/assistant";
 interface Message {
   role: "user" | "assistant";
   text: string;
+  photos?: string[];
 }
 
 export default function AssistantScreen({ navigation }: any) {
@@ -39,13 +41,17 @@ export default function AssistantScreen({ navigation }: any) {
     setMessages((prev) => [...prev, { role: "user", text: question }]);
     setLoading(true);
 
-    const { answer, error } = await askAssistant(userId, question);
+    const { answer, error, photos } = await askAssistant(userId, question);
 
     const responseText = error
       ? "I'm having trouble right now. Please try again in a moment."
       : answer;
 
-    setMessages((prev) => [...prev, { role: "assistant", text: responseText }]);
+    setMessages((prev) => [...prev, {
+      role: "assistant",
+      text: responseText,
+      photos: photos && photos.length > 0 ? photos : undefined,
+    }]);
     setLoading(false);
 
     // Read the answer aloud
@@ -95,6 +101,21 @@ export default function AssistantScreen({ navigation }: any) {
             ]}>
               {msg.text}
             </Text>
+            {msg.photos && msg.photos.length > 0 && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.photosContainer}
+              >
+                {msg.photos.map((url, j) => (
+                  <Image
+                    key={j}
+                    source={{ uri: url }}
+                    style={styles.photoImage}
+                  />
+                ))}
+              </ScrollView>
+            )}
           </View>
         ))}
         {loading && (
@@ -221,5 +242,15 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 24,
     fontWeight: "bold",
+  },
+  photosContainer: {
+    marginTop: 10,
+  },
+  photoImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 12,
+    marginRight: 8,
+    backgroundColor: "#1a1a2e",
   },
 });

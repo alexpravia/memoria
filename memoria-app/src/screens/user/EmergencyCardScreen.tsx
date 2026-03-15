@@ -32,7 +32,7 @@ export default function EmergencyCardScreen({ navigation }: any) {
     // Get the co-user as emergency contact
     const { data: coUser } = await supabase
       .from("co_users")
-      .select("full_name, relationship, phone")
+      .select("full_name, relationship")
       .eq("user_id", userId)
       .limit(1)
       .single();
@@ -40,7 +40,19 @@ export default function EmergencyCardScreen({ navigation }: any) {
     if (coUser) {
       setContactName(coUser.full_name);
       setContactRelation(coUser.relationship);
-      setContactPhone(coUser.phone || "");
+
+      // Try to find phone number from the people table
+      const { data: person } = await supabase
+        .from("people")
+        .select("contact_info")
+        .eq("user_id", userId)
+        .eq("full_name", coUser.full_name)
+        .limit(1)
+        .single();
+
+      if (person?.contact_info?.phone) {
+        setContactPhone(person.contact_info.phone);
+      }
     }
   }
 
@@ -118,7 +130,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
     color: "#fff",
-    minFontSize: 16,
+
   },
   relation: {
     fontSize: 18,

@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
@@ -16,9 +17,25 @@ type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
+interface MediaDetail {
+  file_url: string;
+  description: string | null;
+  ai_tags: string[] | null;
+}
+
+interface TaggedPerson {
+  person_name: string;
+  ai_confidence: number;
+}
+
+interface FlagWithMedia extends FlagItem {
+  media?: MediaDetail;
+  taggedPeople?: TaggedPerson[];
+}
+
 export default function FlagQueueScreen({ navigation }: Props) {
   const { userId, coUserId } = useAuth();
-  const [flags, setFlags] = useState<FlagItem[]>([]);
+  const [flags, setFlags] = useState<FlagWithMedia[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -34,11 +51,61 @@ export default function FlagQueueScreen({ navigation }: Props) {
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
 
-    if (data) setFlags(data);
+    if (!data) {
+      setLoading(false);
+      return;
+    }
+
+    // Enrich media flags with photo details and tagged people
+    const enriched: FlagWithMedia[] = await Promise.all(
+      data.map(async (flag: FlagItem) => {
+        if (flag.flag_type !== "media") return flag;
+
+        const enrichedFlag: FlagWithMedia = { ...flag };
+
+        // Fetch media details
+        const { data: mediaData } = await supabase
+          .from("media")
+          .select("file_url, description, ai_tags")
+          .eq("id", flag.reference_id)
+          .single();
+
+        if (mediaData) {
+          enrichedFlag.media = mediaData;
+        }
+
+        // Fetch tagged people with names
+        const { data: mpData } = await supabase
+          .from("media_people")
+          .select("ai_confidence, person_id")
+          .eq("media_id", flag.reference_id);
+
+        if (mpData && mpData.length > 0) {
+          const personIds = mpData.map((mp: any) => mp.person_id);
+          const { data: peopleData } = await supabase
+            .from("people")
+            .select("id, full_name")
+            .in("id", personIds);
+
+          enrichedFlag.taggedPeople = mpData.map((mp: any) => {
+            const person = peopleData?.find((p: any) => p.id === mp.person_id);
+            return {
+              person_name: person?.full_name || "Unknown",
+              ai_confidence: mp.ai_confidence,
+            };
+          });
+        }
+
+        return enrichedFlag;
+      })
+    );
+
+    setFlags(enriched);
     setLoading(false);
   }
 
-  async function updateFlag(flagId: string, status: "approved" | "rejected" | "hidden") {
+  async function updateFlag(flag: FlagWithMedia, status: "approved" | "rejected" | "hidden") {
+    // Update the flag_queue row
     await supabase
       .from("flag_queue")
       .update({
@@ -46,7 +113,28 @@ export default function FlagQueueScreen({ navigation }: Props) {
         reviewed_by: coUserId,
         reviewed_at: new Date().toISOString(),
       })
-      .eq("id", flagId);
+      .eq("id", flag.id);
+
+    // Cascade to media and media_people for media flags
+    if (flag.flag_type === "media") {
+      if (status === "approved") {
+        await supabase
+          .from("media")
+          .update({ verification_status: "verified" })
+          .eq("id", flag.reference_id);
+
+        await supabase
+          .from("media_people")
+          .update({ verified: true })
+          .eq("media_id", flag.reference_id);
+      } else {
+        // rejected or hidden
+        await supabase
+          .from("media")
+          .update({ verification_status: "hidden" })
+          .eq("id", flag.reference_id);
+      }
+    }
 
     loadFlags();
   }
@@ -79,6 +167,48 @@ export default function FlagQueueScreen({ navigation }: Props) {
       default:
         return styles.statusPending;
     }
+  }
+
+  function getConfidenceLabel(confidence: number) {
+    if (confidence >= 0.9) return { text: "High", color: "#4caf50" };
+    if (confidence >= 0.7) return { text: "Medium", color: "#ffab40" };
+    return { text: "Low", color: "#ef5350" };
+  }
+
+  function renderMediaDetails(flag: FlagWithMedia) {
+    if (flag.flag_type !== "media" || !flag.media) return null;
+
+    return (
+      <View style={styles.mediaSection}>
+        <Image
+          source={{ uri: flag.media.file_url }}
+          style={styles.mediaPreview}
+          resizeMode="cover"
+        />
+        {flag.media.description && (
+          <View style={styles.aiDetailRow}>
+            <Text style={styles.aiDetailLabel}>AI Description</Text>
+            <Text style={styles.aiDetailText}>{flag.media.description}</Text>
+          </View>
+        )}
+        {flag.taggedPeople && flag.taggedPeople.length > 0 && (
+          <View style={styles.aiDetailRow}>
+            <Text style={styles.aiDetailLabel}>Tagged People</Text>
+            {flag.taggedPeople.map((tp, idx) => {
+              const conf = getConfidenceLabel(tp.ai_confidence);
+              return (
+                <View key={idx} style={styles.personTag}>
+                  <Text style={styles.personName}>{tp.person_name}</Text>
+                  <View style={[styles.confidenceBadge, { backgroundColor: conf.color }]}>
+                    <Text style={styles.confidenceText}>{conf.text}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </View>
+    );
   }
 
   const pendingFlags = flags.filter((f) => f.status === "pending");
@@ -123,22 +253,23 @@ export default function FlagQueueScreen({ navigation }: Props) {
                   <Text style={styles.flagDescription}>{flag.description}</Text>
                 </View>
               </View>
+              {renderMediaDetails(flag)}
               <View style={styles.actionRow}>
                 <TouchableOpacity
                   style={styles.approveButton}
-                  onPress={() => updateFlag(flag.id, "approved")}
+                  onPress={() => updateFlag(flag, "approved")}
                 >
                   <Text style={styles.actionButtonText}>✅ Approve</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.rejectButton}
-                  onPress={() => updateFlag(flag.id, "rejected")}
+                  onPress={() => updateFlag(flag, "rejected")}
                 >
                   <Text style={styles.actionButtonText}>❌ Reject</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.hideButton}
-                  onPress={() => updateFlag(flag.id, "hidden")}
+                  onPress={() => updateFlag(flag, "hidden")}
                 >
                   <Text style={styles.actionButtonText}>👁️ Hide</Text>
                 </TouchableOpacity>
@@ -165,6 +296,13 @@ export default function FlagQueueScreen({ navigation }: Props) {
                   </View>
                 </View>
               </View>
+              {flag.flag_type === "media" && flag.media && (
+                <Image
+                  source={{ uri: flag.media.file_url }}
+                  style={styles.mediaPreviewSmall}
+                  resizeMode="cover"
+                />
+              )}
             </View>
           ))}
         </>
@@ -260,6 +398,58 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#e0e0e0",
     lineHeight: 22,
+  },
+  mediaSection: {
+    marginTop: 12,
+  },
+  mediaPreview: {
+    width: "100%",
+    height: 200,
+    borderRadius: 8,
+    marginBottom: 10,
+  },
+  mediaPreviewSmall: {
+    width: "100%",
+    height: 120,
+    borderRadius: 8,
+    marginTop: 10,
+    opacity: 0.8,
+  },
+  aiDetailRow: {
+    marginBottom: 8,
+  },
+  aiDetailLabel: {
+    fontSize: 12,
+    color: "#b388ff",
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    marginBottom: 4,
+    textTransform: "uppercase",
+  },
+  aiDetailText: {
+    fontSize: 14,
+    color: "#e0e0e0",
+    lineHeight: 20,
+  },
+  personTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  personName: {
+    fontSize: 14,
+    color: "#e0e0e0",
+    marginRight: 8,
+  },
+  confidenceBadge: {
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 4,
+  },
+  confidenceText: {
+    fontSize: 11,
+    color: "#ffffff",
+    fontWeight: "600",
   },
   actionRow: {
     flexDirection: "row",

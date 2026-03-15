@@ -8,6 +8,7 @@ import { SensitivityFilter } from "../types";
 interface AssistantResponse {
   answer: string;
   error?: string;
+  photos?: string[];
 }
 
 interface UserContext {
@@ -19,6 +20,14 @@ interface UserContext {
   lifeFacts: string[];
   people: { name: string; relationship: string; key_facts: string[]; emotional_notes: string | null }[];
   events: { title: string; description: string | null; event_date: string }[];
+  media: Array<{
+    id: string;
+    file_url: string;
+    description: string | null;
+    tags: string[];
+    taken_at: string | null;
+    people: string[];
+  }>;
 }
 
 // Fetch user context from Supabase, already filtered by sensitivity rules
@@ -100,7 +109,70 @@ export async function getUserContext(userId: string): Promise<UserContext> {
       event_date: e.event_date,
     }));
 
-  return { profile, lifeFacts, people, events };
+  // Fetch verified media
+  const { data: mediaData } = await supabase
+    .from("media")
+    .select("id, file_url, description, ai_tags, taken_at")
+    .eq("user_id", userId)
+    .eq("verification_status", "verified")
+    .order("taken_at", { ascending: false })
+    .limit(50);
+
+  const mediaPeopleMap: Record<string, string[]> = {};
+  const mediaPersonIds: Record<string, string[]> = {};
+  const mediaIds = (mediaData || []).map((m) => m.id);
+
+  if (mediaIds.length > 0) {
+    const { data: mediaPeopleData } = await supabase
+      .from("media_people")
+      .select("media_id, person_id, people(full_name)")
+      .in("media_id", mediaIds);
+
+    (mediaPeopleData || []).forEach((mp: any) => {
+      if (!mediaPeopleMap[mp.media_id]) mediaPeopleMap[mp.media_id] = [];
+      if (!mediaPersonIds[mp.media_id]) mediaPersonIds[mp.media_id] = [];
+      const name = mp.people?.full_name;
+      if (name) mediaPeopleMap[mp.media_id].push(name);
+      if (mp.person_id) mediaPersonIds[mp.media_id].push(mp.person_id);
+    });
+  }
+
+  const media = (mediaData || [])
+    .filter((m) => {
+      // Exclude photos linked to filtered people
+      const personIds = mediaPersonIds[m.id] || [];
+      if (personIds.some((pid) => filteredPersonIds.includes(pid))) {
+        return false;
+      }
+
+      // Exclude photos whose description contains a filtered topic
+      if (m.description && filteredTopics.some((topic) => m.description!.toLowerCase().includes(topic))) {
+        return false;
+      }
+
+      // Exclude photos taken during filtered time periods
+      if (m.taken_at) {
+        const photoDate = m.taken_at.split("T")[0];
+        if (filteredTimePeriods.some((period) => {
+          if (!period.start || !period.end) return false;
+          return photoDate >= period.start && photoDate <= period.end;
+        })) {
+          return false;
+        }
+      }
+
+      return true;
+    })
+    .map((m) => ({
+      id: m.id,
+      file_url: m.file_url,
+      description: m.description,
+      tags: Array.isArray(m.ai_tags) ? m.ai_tags : [],
+      taken_at: m.taken_at,
+      people: mediaPeopleMap[m.id] || [],
+    }));
+
+  return { profile, lifeFacts, people, events, media };
 }
 
 // Build the system prompt with the user's context baked in
@@ -158,6 +230,27 @@ RULES:
     prompt += `\n`;
   }
 
+  if (context.media.length > 0) {
+    prompt += `PHOTOS & MEMORIES:\n`;
+    prompt += `The user has ${context.media.length} photos in their collection. Here are some of them:\n`;
+    context.media.forEach((photo) => {
+      const date = photo.taken_at
+        ? new Date(photo.taken_at).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "long",
+            day: "numeric",
+          })
+        : "Unknown date";
+      prompt += `- Photo from ${date}`;
+      if (photo.description) prompt += `: ${photo.description}`;
+      if (photo.people.length > 0) prompt += `. People in photo: ${photo.people.join(", ")}`;
+      if (photo.tags.length > 0) prompt += `. Tags: ${photo.tags.join(", ")}`;
+      prompt += ` [PHOTO:${photo.file_url}]\n`;
+    });
+    prompt += `\nWhen the user asks to see photos, you can reference these. Include the photo URL in your response using this exact format: [PHOTO:url] so the app can display it.\n`;
+    prompt += `\n`;
+  }
+
   return prompt;
 }
 
@@ -184,7 +277,18 @@ export async function askAssistant(userId: string, question: string): Promise<As
     }
 
     const parsed = typeof data === "string" ? JSON.parse(data) : data;
-    return { answer: parsed.answer || "I'm not sure how to answer that." };
+    let answer: string = parsed.answer || "I'm not sure how to answer that.";
+
+    // Extract [PHOTO:url] references from the answer
+    const photoRegex = /\[PHOTO:(.*?)\]/g;
+    const photos: string[] = [];
+    let match;
+    while ((match = photoRegex.exec(answer)) !== null) {
+      photos.push(match[1]);
+    }
+    answer = answer.replace(photoRegex, "").trim();
+
+    return { answer, ...(photos.length > 0 && { photos }) };
   } catch (err: any) {
     return { answer: "", error: err.message || "Something went wrong." };
   }

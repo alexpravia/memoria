@@ -48,7 +48,7 @@ export interface Media {
   description: string | null;
   location: string | null;
   taken_at: string | null;
-  ai_tags: Record<string, unknown> | null;
+  ai_tags: string[] | null;
   verification_status: VerificationStatus;
 }
 

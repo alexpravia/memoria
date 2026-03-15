@@ -13,6 +13,7 @@ import {
 import * as MediaLibrary from "expo-media-library";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../../lib/supabase";
+import { processPhotos } from "../../../lib/photoProcessing";
 import { useAuth } from "../../../context/AuthContext";
 
 type Props = {
@@ -34,6 +35,7 @@ export default function ImportPhotosScreen({ navigation }: Props) {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
   const [hasMore, setHasMore] = useState(true);
   const [endCursor, setEndCursor] = useState<string | undefined>();
 
@@ -96,18 +98,59 @@ export default function ImportPhotosScreen({ navigation }: Props) {
 
     setImporting(true);
     try {
-      // For now, store the local URIs as references
-      // In production, we'd upload to Supabase Storage
-      const rows = selected.map((p) => ({
-        user_id: userId,
-        file_url: p.uri,
-        file_type: "photo" as const,
-        taken_at: new Date(p.creationTime).toISOString(),
-        verification_status: "pending" as const,
-      }));
+      const rows = [];
 
-      const { error } = await supabase.from("media").insert(rows);
+      for (let i = 0; i < selected.length; i++) {
+        const p = selected[i];
+        setUploadProgress(`Uploading ${i + 1} of ${selected.length}...`);
+
+        // Read local file as blob and upload to Supabase Storage
+        const filename = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
+        const storagePath = `${userId}/${filename}`;
+
+        const response = await fetch(p.uri);
+        const blob = await response.blob();
+
+        const { error: uploadError } = await supabase.storage
+          .from("photos")
+          .upload(storagePath, blob, { contentType: "image/jpeg" });
+        if (uploadError) throw uploadError;
+
+        const { data: urlData } = supabase.storage
+          .from("photos")
+          .getPublicUrl(storagePath);
+
+        rows.push({
+          user_id: userId,
+          file_url: urlData.publicUrl,
+          file_type: "photo" as const,
+          taken_at: new Date(p.creationTime).toISOString(),
+          verification_status: "pending" as const,
+        });
+      }
+
+      // Insert all uploaded photo records into media table
+      const { data: inserted, error } = await supabase
+        .from("media")
+        .insert(rows)
+        .select("id, file_url");
       if (error) throw error;
+
+      // Analyze photos with AI vision (non-blocking on failures)
+      if (inserted && inserted.length > 0) {
+        setUploadProgress("Analyzing photos...");
+        try {
+          await processPhotos(
+            inserted.map((row) => ({ mediaId: row.id, photoUrl: row.file_url })),
+            userId!,
+            (current, total) => {
+              setUploadProgress(`Analyzing photo ${current} of ${total}...`);
+            }
+          );
+        } catch (err: any) {
+          console.warn("Photo processing error:", err.message);
+        }
+      }
 
       Alert.alert(
         "Imported!",
@@ -118,6 +161,7 @@ export default function ImportPhotosScreen({ navigation }: Props) {
       Alert.alert("Error", error.message);
     } finally {
       setImporting(false);
+      setUploadProgress("");
     }
   }
 
@@ -177,7 +221,14 @@ export default function ImportPhotosScreen({ navigation }: Props) {
           disabled={importing}
         >
           {importing ? (
-            <ActivityIndicator color="#fff" />
+            <View style={{ alignItems: "center" }}>
+              <ActivityIndicator color="#fff" />
+              {uploadProgress ? (
+                <Text style={{ color: "#fff", fontSize: 14, marginTop: 6 }}>
+                  {uploadProgress}
+                </Text>
+              ) : null}
+            </View>
           ) : (
             <Text style={styles.importButtonText}>
               Import {selectedCount} Photo{selectedCount > 1 ? "s" : ""}

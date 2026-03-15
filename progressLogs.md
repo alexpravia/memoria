@@ -75,3 +75,60 @@
 1. Continue **testing and fixing bugs** across both the co-user and user experiences
 2. Verify all import flows work correctly end-to-end on a real device
 3. Test the full user journey — login, briefing, emergency card, and AI assistant
+
+---
+
+## March 14, 2026
+
+### Photo Upload to Supabase Storage
+
+- Modified **`ImportPhotosScreen.tsx`** to upload photos to Supabase Storage (bucket: `photos/{userId}/`) instead of saving local `file://` URIs — photos are now accessible via public URLs from any device and can be analyzed by AI
+- Added upload progress display ("Uploading 3 of 10...") during the import process
+
+### AI Vision Edge Function (`process-photo`)
+
+- Created a new **Supabase Edge Function** (`process-photo`) that accepts a photo URL and the user's known people list, calls the AI vision model (same provider-agnostic setup as `ask-assistant`), and returns structured JSON: a warm description, category tags, identified people with confidence levels (high/medium/low), and a review flag with reason
+- Deployed to Supabase via `npx supabase functions deploy process-photo`
+
+### Post-Import Processing Pipeline
+
+- Created **`src/lib/photoProcessing.ts`** — after photos are uploaded and inserted into `media`, this utility calls the `process-photo` Edge Function for each photo, then writes results back to the database: updates `media` with description and `ai_tags`, inserts `media_people` rows with numeric confidence scores (high=0.9, medium=0.7, low=0.3), creates `flag_queue` entries for photos needing review, and auto-verifies photos where all people are high-confidence
+- Wired into **`ImportPhotosScreen.tsx`** — processing runs automatically after import with progress display ("Analyzing photo X of Y...")
+
+### Flag Queue — Photo Review with AI Suggestions
+
+- Enhanced **`FlagQueueScreen.tsx`** to handle `flag_type = 'media'` items with a rich review UI — when a media flag is displayed, it now shows the actual photo (fetched from `media.file_url` via `reference_id`), the AI-generated description, and all tagged people with color-coded confidence badges (green for high, orange for medium, red for low)
+- Added **cascading approval/rejection logic** — when a co-user approves a media flag, it updates `media.verification_status` to `'verified'` and sets all `media_people` rows for that photo to `verified = true`; when rejected or hidden, it sets `media.verification_status` to `'hidden'`
+- Previously reviewed media flags now show a small photo thumbnail for quick reference
+- Enhanced **`ViewPhotosScreen.tsx`** with verification status badges on each photo: ✓ (green) for verified, ⏳ (orange) for pending, 🚫 (red) for hidden
+- Added a **filter toggle bar** at the top of the photos grid with three options — "All", "⏳ Pending", and "✓ Verified" — each showing a count, so the co-user can quickly find photos that still need review
+
+### AI Assistant — Photo/Media Context
+
+- Updated **`assistant.ts`** to include verified photo metadata in the AI context, so the assistant can now answer questions like "Show me photos of Maria" or "Do I have pictures from Christmas?"
+- Added a `media` array to the **`UserContext` interface** containing photo ID, URL, description, tags (from `ai_tags` JSONB), taken date, and tagged people names
+- Added a **media query** in `getUserContext()` that fetches up to 50 most recent verified photos from the `media` table, joins `media_people` with `people` to resolve tagged person names, and applies full sensitivity filtering — excludes photos linked to filtered person IDs, photos with descriptions containing filtered topics, and photos taken during filtered time periods
+- Added a **PHOTOS & MEMORIES** section to the system prompt in `buildSystemPrompt()` that lists each photo with its date, description, people, tags, and `[PHOTO:url]` reference for the LLM to use
+- Updated **`askAssistant()`** to parse `[PHOTO:url]` markers from the LLM response, strip them from the text, and return them in a separate `photos` array on the `AssistantResponse` interface — this lets the UI render photos inline without raw URLs in the spoken text
+- The `media_people` query is skipped when there are no media IDs to avoid unnecessary Supabase calls
+
+### Photos in Chat UI
+
+- Updated **`AssistantScreen.tsx`** to render photos inline in the chat — when the assistant references photos, they display as a horizontal scrollable row of 200×200 rounded images below the text bubble. TTS only reads the text, not photo URLs
+
+### Photos in Morning Briefing
+
+- Added a **"Recent Memories" section** to the morning briefing in `BriefingScreen.tsx` — after the people slides and before today's events, the briefing now shows up to 5 verified photos with AI-generated descriptions. Each photo gets its own slide with a warm intro ("Here's a memory", "A moment from your life", etc.), the description as the subtitle (read aloud via TTS), and the photo displayed using the existing circular image renderer
+- Added **sensitivity filtering** to the memories section — fetches the user's sensitivity filters and excludes photos tagged with filtered people (via `media_people` join), photos with descriptions containing filtered topics, and photos taken during filtered time periods. Follows the same filtering pattern used in `assistant.ts`
+- Added **photo fallback for people slides** — when a person's `photo_url` is null (common for imported contacts), the briefing now checks `media_people` for a verified, high-confidence (≥0.8) photo of that person and uses it as their slide photo. This means people imported from contacts can still show a face in the briefing if they've been tagged in a verified photo
+- The memories section is fully optional — if no verified photos exist or all are filtered out, the section is silently skipped and the briefing flows naturally
+
+### Bug Fix: Emergency Card Missing Contact Info
+
+- Fixed **`EmergencyCardScreen.tsx`** — the query was selecting a `phone` column that doesn't exist on the `co_users` table, causing the entire emergency contact section to silently fail. Removed the invalid column from the query and added a fallback lookup to the `people` table's `contact_info` JSONB for phone numbers
+- Fixed the pre-existing **TypeScript error** — removed invalid `minFontSize` style property from `contactValue` (the `adjustsFontSizeToFit` prop already handles this). Codebase now compiles with zero TypeScript errors
+
+### Next Steps
+1. **Test the full photo pipeline** end-to-end on a real device — import photos, verify AI processing runs, check flag queue, approve photos, confirm they appear in briefing and chatbot
+2. **Deepen AI integration** beyond the chatbot — facial recognition accuracy, photo categorization refinement, and smarter context surfacing (e.g., "This Day in Your Life" photo memories, event-linked photos)
+3. Continue testing and fixing bugs across both co-user and user experiences

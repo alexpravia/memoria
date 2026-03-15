@@ -11,7 +11,7 @@ import {
 import * as Speech from "expo-speech";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
-import { UserProfile, Person } from "../../types";
+import { UserProfile, Person, SensitivityFilter } from "../../types";
 
 interface BriefingSlide {
   text: string;
@@ -125,6 +125,32 @@ export default function BriefingScreen({ navigation }: any) {
       .eq("user_id", userId);
 
     if (people && people.length > 0) {
+      // Fetch fallback photos for people without a photo_url
+      const peopleWithoutPhoto = people.filter((p) => !p.photo_url);
+      const fallbackPhotoMap: Record<string, string> = {};
+
+      if (peopleWithoutPhoto.length > 0) {
+        const { data: mediaPeoplePhotos } = await supabase
+          .from("media_people")
+          .select("person_id, media(file_url, verification_status)")
+          .in(
+            "person_id",
+            peopleWithoutPhoto.map((p) => p.id)
+          )
+          .eq("verified", true)
+          .gte("ai_confidence", 0.8);
+
+        (mediaPeoplePhotos || []).forEach((mp: any) => {
+          if (
+            !fallbackPhotoMap[mp.person_id] &&
+            mp.media?.file_url &&
+            mp.media?.verification_status === "verified"
+          ) {
+            fallbackPhotoMap[mp.person_id] = mp.media.file_url;
+          }
+        });
+      }
+
       briefingSlides.push({
         text: "The important people in your life",
       });
@@ -137,7 +163,102 @@ export default function BriefingScreen({ navigation }: any) {
         briefingSlides.push({
           text: person.full_name,
           subtitle,
-          photoUrl: person.photo_url || undefined,
+          photoUrl: person.photo_url || fallbackPhotoMap[person.id] || undefined,
+        });
+      }
+    }
+
+    // Recent memories (verified photos with sensitivity filtering)
+    const { data: filtersData } = await supabase
+      .from("sensitivity_filters")
+      .select("*")
+      .eq("user_id", userId);
+
+    const sensitivityFilters: SensitivityFilter[] = filtersData || [];
+
+    const filteredPersonIds = sensitivityFilters
+      .filter((f) => f.filter_type === "person" && f.person_id)
+      .map((f) => f.person_id);
+
+    const filteredTopics = sensitivityFilters
+      .filter((f) => f.filter_type === "topic")
+      .map((f) => f.filter_value.toLowerCase());
+
+    const filteredTimePeriods = sensitivityFilters
+      .filter((f) => f.filter_type === "time_period")
+      .map((f) => ({ start: f.start_date, end: f.end_date }));
+
+    const { data: recentMedia } = await supabase
+      .from("media")
+      .select("id, file_url, description, taken_at")
+      .eq("user_id", userId)
+      .eq("verification_status", "verified")
+      .not("description", "is", null)
+      .order("taken_at", { ascending: false })
+      .limit(10);
+
+    if (recentMedia && recentMedia.length > 0) {
+      // Fetch tagged people for these photos
+      const mediaIds = recentMedia.map((m) => m.id);
+      const mediaPersonIds: Record<string, string[]> = {};
+
+      if (mediaIds.length > 0) {
+        const { data: mediaPeopleData } = await supabase
+          .from("media_people")
+          .select("media_id, person_id")
+          .in("media_id", mediaIds);
+
+        (mediaPeopleData || []).forEach((mp: any) => {
+          if (!mediaPersonIds[mp.media_id]) mediaPersonIds[mp.media_id] = [];
+          if (mp.person_id) mediaPersonIds[mp.media_id].push(mp.person_id);
+        });
+      }
+
+      // Apply sensitivity filters
+      const safePhotos = recentMedia.filter((m) => {
+        // Exclude photos linked to filtered people
+        const personIds = mediaPersonIds[m.id] || [];
+        if (personIds.some((pid) => filteredPersonIds.includes(pid))) return false;
+
+        // Exclude photos with descriptions containing filtered topics
+        if (m.description && filteredTopics.some((topic) => m.description!.toLowerCase().includes(topic))) return false;
+
+        // Exclude photos taken during filtered time periods
+        if (m.taken_at) {
+          const photoDate = m.taken_at.split("T")[0];
+          if (
+            filteredTimePeriods.some((period) => {
+              if (!period.start || !period.end) return false;
+              return photoDate >= period.start && photoDate <= period.end;
+            })
+          )
+            return false;
+        }
+
+        return true;
+      });
+
+      const memorySlidePhotos = safePhotos.slice(0, 5);
+
+      if (memorySlidePhotos.length > 0) {
+        briefingSlides.push({
+          text: "Some memories from your life",
+        });
+
+        const memoryIntros = [
+          "Here's a memory",
+          "A moment from your life",
+          "Something to remember",
+          "A special moment",
+          "From your photo collection",
+        ];
+
+        memorySlidePhotos.forEach((photo, i) => {
+          briefingSlides.push({
+            text: memoryIntros[i % memoryIntros.length],
+            subtitle: photo.description!,
+            photoUrl: photo.file_url,
+          });
         });
       }
     }
