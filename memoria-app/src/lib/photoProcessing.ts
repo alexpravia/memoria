@@ -15,6 +15,30 @@ const CONFIDENCE_MAP: Record<string, number> = {
   low: 0.3,
 };
 
+async function upsertPendingFlag(
+  mediaId: string,
+  userId: string,
+  description: string
+): Promise<void> {
+  const { data: existingFlag } = await supabase
+    .from("flag_queue")
+    .select("id")
+    .eq("reference_id", mediaId)
+    .eq("flag_type", "media")
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (existingFlag) return;
+
+  await supabase.from("flag_queue").insert({
+    user_id: userId,
+    flag_type: "media",
+    reference_id: mediaId,
+    description,
+    status: "pending",
+  });
+}
+
 export async function processPhoto(
   mediaId: string,
   photoUrl: string,
@@ -43,6 +67,18 @@ export async function processPhoto(
 
   if (error || !data) {
     console.warn(`AI processing failed for media ${mediaId}:`, error?.message || "No data returned");
+
+    await supabase
+      .from("media")
+      .update({ verification_status: "pending" })
+      .eq("id", mediaId);
+
+    await upsertPendingFlag(
+      mediaId,
+      userId,
+      `AI processing failed: ${error?.message || "No response from model"}`
+    );
+
     return null;
   }
 
@@ -57,7 +93,7 @@ export async function processPhoto(
   const verificationStatus =
     allHighConfidence && !result.needs_review ? "verified" : "pending";
 
-  await supabase
+  const { error: mediaUpdateError } = await supabase
     .from("media")
     .update({
       description: result.description,
@@ -66,30 +102,37 @@ export async function processPhoto(
     })
     .eq("id", mediaId);
 
+  if (mediaUpdateError) {
+    console.warn(`Failed to update media ${mediaId}:`, mediaUpdateError.message);
+    await upsertPendingFlag(mediaId, userId, `Could not update analyzed photo metadata: ${mediaUpdateError.message}`);
+    return result;
+  }
+
   // Link identified people via media_people junction table
   for (const identified of result.people_identified) {
     const match = people.find(
       (p) => p.full_name.toLowerCase() === identified.name.toLowerCase()
     );
     if (match) {
-      await supabase.from("media_people").insert({
+      const { error: mediaPeopleError } = await supabase.from("media_people").upsert({
         media_id: mediaId,
         person_id: match.id,
         ai_confidence: CONFIDENCE_MAP[identified.confidence] ?? 0.3,
         verified: false,
       });
+
+      if (mediaPeopleError) {
+        console.warn(`Failed to link person ${match.id} to media ${mediaId}:`, mediaPeopleError.message);
+      }
     }
   }
 
-  // Create flag_queue entry if review is needed
-  if (result.needs_review) {
-    await supabase.from("flag_queue").insert({
-      user_id: userId,
-      flag_type: "media",
-      reference_id: mediaId,
-      description: `AI flagged: ${result.review_reason || "Needs manual review"}`,
-      status: "pending",
-    });
+  // Every pending photo must have a queue item so co-users can review it.
+  if (verificationStatus === "pending") {
+    const reason = result.needs_review
+      ? `AI flagged: ${result.review_reason || "Needs manual review"}`
+      : "Photo is pending verification. Please review and approve.";
+    await upsertPendingFlag(mediaId, userId, reason);
   }
 
   return result;
@@ -108,4 +151,32 @@ export async function processPhotos(
     }
     onProgress?.(i + 1, photos.length);
   }
+}
+
+export async function reprocessPendingPhotos(userId: string): Promise<{ processed: number; failed: number }> {
+  const { data: pendingPhotos, error } = await supabase
+    .from("media")
+    .select("id, file_url")
+    .eq("user_id", userId)
+    .eq("file_type", "photo")
+    .eq("verification_status", "pending");
+
+  if (error || !pendingPhotos) {
+    return { processed: 0, failed: 0 };
+  }
+
+  let processed = 0;
+  let failed = 0;
+
+  for (const media of pendingPhotos) {
+    try {
+      const result = await processPhoto(media.id, media.file_url, userId);
+      if (result) processed += 1;
+      else failed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+
+  return { processed, failed };
 }

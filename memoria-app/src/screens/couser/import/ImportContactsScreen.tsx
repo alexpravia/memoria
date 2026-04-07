@@ -133,7 +133,7 @@ export default function ImportContactsScreen({ navigation }: Props) {
 
       Alert.alert(
         "Imported!",
-        `${selected.length} contact${selected.length > 1 ? "s" : ""} imported. You can edit their relationships and details from the dashboard.`,
+        `${selected.length} contact${selected.length > 1 ? "s" : ""} imported. You can edit relationship, key facts, emotional notes, phone, and email from People.`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {

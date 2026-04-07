@@ -7,6 +7,7 @@ These threads from a previous account contain the full history of work on this p
 - **T-019ccae3-e981-71fb-bd6a-77f4bd1ab557** — Committed `details.md` update (generic "tablet", visual accessibility note)
 - **T-019ce8b8-8008-729c-9344-35b6c75b8099** — Full review of Memoria context, implementation status, and recent fixes
 - **T-019cef56-210d-70e9-b449-ab86ab5b8ee0** — Photo intelligence pipeline: full AI photo processing (upload, vision analysis, tagging, flag queue, assistant context, chat display, briefing integration) + emergency card bug fix
+- **T-019cfe0f-0e80-70fb-8610-e5021490bd5d** — Bug fix batch (March 22, 2026): 4 fixes applied, NOT yet logged in progressLogs.md
 
 ## Project Overview
 Memoria is a real-time context generator that helps people with Alzheimer's, dementia, and other memory impairments stay connected to reality. It combines a co-user's (caregiver/family) emotional intelligence with AI processing to build a personal database of the user's life and deliver it back to them daily.
@@ -36,7 +37,7 @@ Memoria is a real-time context generator that helps people with Alzheimer's, dem
 10. `pinned_notes` — "Things I want to remember" voice notes
 11. `sensitivity_filters` — Boundaries to hide distressing content
 
-## Current Status (as of March 14, 2026)
+## Current Status (as of March 22, 2026)
 **Phases 0 through 1C are complete, plus the photo intelligence pipeline.** The app has:
 - Role-based auth (user vs co-user)
 - Co-user onboarding (life facts, people, events, device imports for contacts/calendar/photos)
@@ -50,6 +51,12 @@ Memoria is a real-time context generator that helps people with Alzheimer's, dem
 - Duplicate import filtering with "Already imported" badges
 - iOS photo `ph://` → `file://` URI fix
 - Emergency card bug fix (removed invalid `phone` column query)
+
+### Recent fixes (March 22, 2026 — T-019cfe0f, NOT yet in progressLogs.md):
+1. **Delete people** — `ViewPeopleScreen.tsx` now has delete buttons with confirmation on each person card (cascading deletes handle `media_people`/`sensitivity_filters`)
+2. **Photo import RLS fix** — Created and ran `supabase/fix_rls_policies.sql` adding RLS policies to `media`, `media_people`, `flag_queue`, and `storage.objects` (photos bucket) so co-users can insert for their linked patient. Already executed in Supabase Dashboard.
+3. **Emergency card email** — `EmergencyCardScreen.tsx` now fetches and displays the co-user's email from `co_users.email`, shown below phone number
+4. **Briefing photos on all slides** — `BriefingScreen.tsx` now shows user's `photo_url` on greeting, location, life facts, and closing slides (people/memories slides were already handled)
 
 ## Key Files
 - `src/lib/assistant.ts` — AI context filtering and LLM calls
@@ -75,7 +82,8 @@ Memoria is a real-time context generator that helps people with Alzheimer's, dem
 
 ## Instructions for Working on This Project
 - Always read `progressLogs.md` before starting work to understand current status
-- After completing work, append a dated entry to `progressLogs.md` documenting what was done
+- Never update `progressLogs.md` during normal implementation flow
+- Only update `progressLogs.md` when the user explicitly requests it at the end of the session
 - Follow the existing code conventions in `memoria-app/`
 - Keep the UI extremely simple — this is the #1 design rule
 - Audio-first: anything shown to the user should also be spoken via TTS

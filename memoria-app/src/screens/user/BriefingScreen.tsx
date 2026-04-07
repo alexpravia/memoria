@@ -11,7 +11,7 @@ import {
 import * as Speech from "expo-speech";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
-import { UserProfile, Person, SensitivityFilter } from "../../types";
+import { SensitivityFilter } from "../../types";
 
 interface BriefingSlide {
   text: string;
@@ -81,6 +81,8 @@ export default function BriefingScreen({ navigation }: any) {
       return;
     }
 
+    const fallbackPhotoPool: string[] = [];
+
     // Greeting
     const today = new Date();
     const dayName = today.toLocaleDateString("en-US", { weekday: "long" });
@@ -95,12 +97,14 @@ export default function BriefingScreen({ navigation }: any) {
     briefingSlides.push({
       text: `${greeting}, ${user.full_name}`,
       subtitle: `Today is ${dayName}, ${dateStr}`,
+      photoUrl: user.photo_url || undefined,
     });
 
     // Location
     if (user.location) {
       briefingSlides.push({
         text: `You live in ${user.location}`,
+        photoUrl: user.photo_url || undefined,
       });
     }
 
@@ -115,6 +119,7 @@ export default function BriefingScreen({ navigation }: any) {
       briefingSlides.push({
         text: "Here are some things about you",
         subtitle: facts.map((f) => f.fact).join("\n\n"),
+        photoUrl: user.photo_url || undefined,
       });
     }
 
@@ -150,6 +155,12 @@ export default function BriefingScreen({ navigation }: any) {
           }
         });
       }
+
+      Object.values(fallbackPhotoMap).forEach((url) => {
+        if (url && !fallbackPhotoPool.includes(url)) {
+          fallbackPhotoPool.push(url);
+        }
+      });
 
       briefingSlides.push({
         text: "The important people in your life",
@@ -241,8 +252,15 @@ export default function BriefingScreen({ navigation }: any) {
       const memorySlidePhotos = safePhotos.slice(0, 5);
 
       if (memorySlidePhotos.length > 0) {
+        memorySlidePhotos.forEach((photo) => {
+          if (photo.file_url && !fallbackPhotoPool.includes(photo.file_url)) {
+            fallbackPhotoPool.push(photo.file_url);
+          }
+        });
+
         briefingSlides.push({
           text: "Some memories from your life",
+          photoUrl: memorySlidePhotos[0]?.file_url,
         });
 
         const memoryIntros = [
@@ -276,6 +294,7 @@ export default function BriefingScreen({ navigation }: any) {
       briefingSlides.push({
         text: "Here's what's planned for today",
         subtitle: todayEvents.map((e) => e.title + (e.description ? `: ${e.description}` : "")).join("\n\n"),
+        photoUrl: fallbackPhotoPool[0] || user.photo_url || undefined,
       });
     }
 
@@ -305,6 +324,7 @@ export default function BriefingScreen({ navigation }: any) {
             return `${d}: ${e.title}`;
           })
           .join("\n\n"),
+        photoUrl: fallbackPhotoPool[1] || fallbackPhotoPool[0] || user.photo_url || undefined,
       });
     }
 
@@ -312,9 +332,26 @@ export default function BriefingScreen({ navigation }: any) {
     briefingSlides.push({
       text: "That's your briefing for today",
       subtitle: "Have a wonderful day!",
+      photoUrl: user.photo_url || undefined,
     });
 
-    setSlides(briefingSlides);
+    // Ensure every applicable slide has a photo when we have one available.
+    const normalizedSlides = briefingSlides.map((slide, idx) => {
+      if (slide.photoUrl) return slide;
+
+      const poolPhoto = fallbackPhotoPool[idx % (fallbackPhotoPool.length || 1)];
+      if (poolPhoto) {
+        return { ...slide, photoUrl: poolPhoto };
+      }
+
+      if (user.photo_url) {
+        return { ...slide, photoUrl: user.photo_url };
+      }
+
+      return slide;
+    });
+
+    setSlides(normalizedSlides);
     setLoading(false);
   }
 

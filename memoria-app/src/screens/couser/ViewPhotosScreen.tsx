@@ -8,9 +8,11 @@ import {
   FlatList,
   Image,
   Dimensions,
+  Alert,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
+import { reprocessPendingPhotos } from "../../lib/photoProcessing";
 import { useAuth } from "../../context/AuthContext";
 import { VerificationStatus } from "../../types";
 
@@ -45,11 +47,20 @@ export default function ViewPhotosScreen({ navigation }: Props) {
   const { userId } = useAuth();
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [retrying, setRetrying] = useState(false);
   const [filter, setFilter] = useState<FilterOption>("all");
 
   useEffect(() => {
     loadPhotos();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      loadPhotos();
+    });
+
+    return unsubscribe;
+  }, [navigation, userId]);
 
   async function loadPhotos() {
     if (!userId) return;
@@ -61,6 +72,19 @@ export default function ViewPhotosScreen({ navigation }: Props) {
 
     setPhotos(data || []);
     setLoading(false);
+  }
+
+  async function handleRetryPending() {
+    if (!userId || retrying) return;
+    setRetrying(true);
+    const { processed, failed } = await reprocessPendingPhotos(userId);
+    setRetrying(false);
+    await loadPhotos();
+
+    Alert.alert(
+      "Retry Complete",
+      `Processed: ${processed}\nStill failing: ${failed}\n\nPending photos will appear in Review Queue for manual approval.`
+    );
   }
 
   const filteredPhotos = photos.filter((p) => {
@@ -120,6 +144,28 @@ export default function ViewPhotosScreen({ navigation }: Props) {
           </Text>
         </TouchableOpacity>
       </View>
+
+      {pendingCount > 0 && (
+        <View style={styles.pendingActions}>
+          <TouchableOpacity
+            style={[styles.retryButton, retrying && styles.retryButtonDisabled]}
+            onPress={handleRetryPending}
+            disabled={retrying}
+          >
+            {retrying ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.retryButtonText}>Retry AI Processing For Pending Photos</Text>
+            )}
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.reviewQueueButton}
+            onPress={() => navigation.navigate("FlagQueue")}
+          >
+            <Text style={styles.reviewQueueText}>Open Review Queue</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {filteredPhotos.length === 0 ? (
         <View style={styles.emptyState}>
@@ -231,6 +277,38 @@ const styles = StyleSheet.create({
   emptyText: {
     color: "#888",
     fontSize: 16,
+  },
+  pendingActions: {
+    marginHorizontal: 40,
+    marginBottom: 10,
+  },
+  retryButton: {
+    backgroundColor: "#7c4dff",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  retryButtonDisabled: {
+    opacity: 0.7,
+  },
+  retryButtonText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 14,
+  },
+  reviewQueueButton: {
+    marginTop: 8,
+    backgroundColor: "#2a2a4a",
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#7c4dff",
+  },
+  reviewQueueText: {
+    color: "#b388ff",
+    fontWeight: "600",
+    fontSize: 13,
   },
   grid: {
     paddingHorizontal: 40,

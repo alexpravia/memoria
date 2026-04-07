@@ -31,6 +31,14 @@ export default function CoUserHomeScreen({ navigation }: Props) {
     if (userId) loadData();
   }, [userId]);
 
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      if (userId) loadData();
+    });
+
+    return unsubscribe;
+  }, [navigation, userId]);
+
   async function loadData() {
     const { data: user } = await supabase
       .from("users")
@@ -187,6 +195,13 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         <Text style={styles.actionButtonText}>
           {hasUserLogin ? "🔑 Set Up Another User" : "🔑 Set Up Their Login"}
         </Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.safetyButton}
+        onPress={() => navigation.navigate("EmergencyContactSettings")}
+      >
+        <Text style={styles.actionButtonText}>📞 Emergency Contact Number</Text>
       </TouchableOpacity>
 
       <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>

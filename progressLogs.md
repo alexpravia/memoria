@@ -132,3 +132,56 @@
 1. **Test the full photo pipeline** end-to-end on a real device — import photos, verify AI processing runs, check flag queue, approve photos, confirm they appear in briefing and chatbot
 2. **Deepen AI integration** beyond the chatbot — facial recognition accuracy, photo categorization refinement, and smarter context surfacing (e.g., "This Day in Your Life" photo memories, event-linked photos)
 3. Continue testing and fixing bugs across both co-user and user experiences
+
+---
+
+## March 22, 2026
+
+### Bug Fix: Photo Import RLS Error
+
+- Diagnosed the **"new row violates row-level security policy"** error during co-user photo import — the co-user is authenticated with their own `auth.uid()`, but inserts into `media` with `user_id` set to the patient's UUID, which default RLS policies reject
+- Created **`supabase/fix_rls_policies.sql`** — a safe-to-run migration that drops and recreates RLS policies for:
+  - **`media` table** — INSERT, SELECT, UPDATE, DELETE policies allowing co-users to manage media for their linked patient (via `co_users.auth_id = auth.uid()`)
+  - **`media_people` table** — INSERT policy so photo processing can tag people in the patient's photos
+  - **`flag_queue` table** — INSERT policy so photo processing can create review items for flagged content
+  - **`storage.objects` (photos bucket)** — INSERT and SELECT policies allowing any authenticated user to upload and read photos
+- All policies use `DROP POLICY IF EXISTS` before `CREATE POLICY` for idempotent re-runs
+- File is ready to run in the Supabase Dashboard SQL Editor
+
+---
+
+## April 6, 2026
+
+### Co-User: People Editing + Emergency Contact Management
+
+- Added full editing support for people (including imported contacts) by creating `EditPersonScreen.tsx` and wiring it into navigation and `ViewPeopleScreen.tsx`; co-users can now update name, relationship, key facts, emotional notes, phone, and email
+- Added refresh-on-focus behavior to `ViewPeopleScreen.tsx` and `CoUserHomeScreen.tsx` so saved edits and updated stats appear immediately when returning to those screens
+- Added `EmergencyContactSettingsScreen.tsx` and linked it from the co-user dashboard so the co-user can explicitly set and update emergency phone number at any time
+- Updated onboarding (`CreateUserProfileScreen.tsx`) to collect emergency contact phone number at setup time
+
+### User: Emergency Card + Briefing Photo Coverage
+
+- Updated `EmergencyCardScreen.tsx` to read emergency phone/email directly from `co_users`, display phone above email, and keep a backward-compatible fallback to `people.contact_info.phone` only if needed
+- Removed duplicate email rendering path in the emergency card flow so contact details appear once and in the intended order
+- Expanded `BriefingScreen.tsx` slide photo assignment to ensure applicable slides have photos via verified fallback pools (including people and event-related sections)
+
+### Photo Pipeline Reliability + Review Queue Hardening
+
+- Hardened `photoProcessing.ts` so AI processing failures no longer silently stall: pending media now gets/keeps queue entries, metadata update failures are handled, and person-tag upserts are resilient
+- Added retry processing for stuck pending photos via `reprocessPendingPhotos()` and wired a retry action into `ViewPhotosScreen.tsx`
+- Added direct "Open Review Queue" action from pending photos UI to speed up manual verification workflow
+- Improved `ImportPhotosScreen.tsx` post-import messaging so partial AI failures are surfaced to the co-user instead of appearing as silent success
+- Strengthened `FlagQueueScreen.tsx` error handling for queue load and approve/reject/hide actions, with visible retry UI for failures
+
+### Supabase SQL + Data Flow Updates
+
+- Added `supabase/add_co_user_phone.sql` to add `co_users.phone` for emergency contact source-of-truth
+- Added `supabase/fix_flag_queue_and_pending_backfill.sql` to harden RLS around `flag_queue`/`media_people` access and backfill missing pending queue records for pending photos
+- Executed the SQL updates in Supabase and confirmed they are now in place for testing
+
+### Validation
+
+- Ran `npx tsc --noEmit` in `memoria-app` with no TypeScript errors
+
+### Next Steps
+1. Fully test everything end-to-end and do not move forward until everything works correctly.

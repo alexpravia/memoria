@@ -10,6 +10,7 @@ export default function EmergencyCardScreen({ navigation }: any) {
   const [contactName, setContactName] = useState("");
   const [contactRelation, setContactRelation] = useState("");
   const [contactPhone, setContactPhone] = useState("");
+  const [contactEmail, setContactEmail] = useState("");
 
   useEffect(() => {
     loadEmergencyInfo();
@@ -17,6 +18,11 @@ export default function EmergencyCardScreen({ navigation }: any) {
 
   async function loadEmergencyInfo() {
     if (!userId) return;
+
+    setContactName("");
+    setContactRelation("");
+    setContactPhone("");
+    setContactEmail("");
 
     const { data: user } = await supabase
       .from("users")
@@ -32,7 +38,7 @@ export default function EmergencyCardScreen({ navigation }: any) {
     // Get the co-user as emergency contact
     const { data: coUser } = await supabase
       .from("co_users")
-      .select("full_name, relationship")
+      .select("full_name, relationship, email, phone")
       .eq("user_id", userId)
       .limit(1)
       .single();
@@ -40,18 +46,22 @@ export default function EmergencyCardScreen({ navigation }: any) {
     if (coUser) {
       setContactName(coUser.full_name);
       setContactRelation(coUser.relationship);
+      if (coUser.phone) setContactPhone(coUser.phone);
+      if (coUser.email) setContactEmail(coUser.email);
 
-      // Try to find phone number from the people table
-      const { data: person } = await supabase
-        .from("people")
-        .select("contact_info")
-        .eq("user_id", userId)
-        .eq("full_name", coUser.full_name)
-        .limit(1)
-        .single();
+      // Backward-compatible fallback for older rows where phone was stored in people.contact_info
+      if (!coUser.phone) {
+        const { data: person } = await supabase
+          .from("people")
+          .select("contact_info")
+          .eq("user_id", userId)
+          .eq("full_name", coUser.full_name)
+          .limit(1)
+          .single();
 
-      if (person?.contact_info?.phone) {
-        setContactPhone(person.contact_info.phone);
+        if (person?.contact_info?.phone) {
+          setContactPhone(person.contact_info.phone);
+        }
       }
     }
   }
@@ -78,6 +88,9 @@ export default function EmergencyCardScreen({ navigation }: any) {
             <Text style={styles.relation}>({contactRelation})</Text>
             {contactPhone ? (
               <Text style={styles.phone}>{contactPhone}</Text>
+            ) : null}
+            {contactEmail ? (
+              <Text style={styles.email}>{contactEmail}</Text>
             ) : null}
           </>
         ) : null}
@@ -130,7 +143,6 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
     color: "#fff",
-
   },
   relation: {
     fontSize: 18,
@@ -139,6 +151,13 @@ const styles = StyleSheet.create({
   },
   phone: {
     fontSize: 20,
+    color: "#7c4dff",
+    marginTop: 8,
+    fontWeight: "600",
+    letterSpacing: 1,
+  },
+  email: {
+    fontSize: 18,
     color: "#7c4dff",
     marginTop: 8,
     fontWeight: "600",

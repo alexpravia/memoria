@@ -23,6 +23,7 @@ export default function CreateUserProfileScreen({ navigation }: Props) {
   const [dateOfBirth, setDateOfBirth] = useState("");
   const [location, setLocation] = useState("");
   const [relationship, setRelationship] = useState("");
+  const [phone, setPhone] = useState("");
   const [loading, setLoading] = useState(false);
 
   async function handleCreate() {
@@ -32,6 +33,10 @@ export default function CreateUserProfileScreen({ navigation }: Props) {
     }
     if (!relationship.trim()) {
       Alert.alert("Please enter your relationship to them");
+      return;
+    }
+    if (!phone.trim()) {
+      Alert.alert("Please enter your phone number for emergency contact");
       return;
     }
 
@@ -60,6 +65,7 @@ export default function CreateUserProfileScreen({ navigation }: Props) {
           full_name: session!.user.user_metadata?.full_name || session!.user.email!,
           user_id: user.id,
           relationship: relationship.trim(),
+          phone: phone.trim(),
         })
         .select()
         .single();
@@ -116,6 +122,16 @@ export default function CreateUserProfileScreen({ navigation }: Props) {
         placeholderTextColor="#888"
         value={relationship}
         onChangeText={setRelationship}
+      />
+
+      <Text style={styles.label}>Your Phone Number (Emergency Contact) *</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="e.g., (305) 555-0199"
+        placeholderTextColor="#888"
+        value={phone}
+        onChangeText={setPhone}
+        keyboardType="phone-pad"
       />
 
       <TouchableOpacity

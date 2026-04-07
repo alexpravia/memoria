@@ -7,6 +7,7 @@ import {
   ScrollView,
   ActivityIndicator,
   Image,
+  Alert,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
@@ -37,6 +38,7 @@ export default function FlagQueueScreen({ navigation }: Props) {
   const { userId, coUserId } = useAuth();
   const [flags, setFlags] = useState<FlagWithMedia[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   useEffect(() => {
     loadFlags();
@@ -45,11 +47,19 @@ export default function FlagQueueScreen({ navigation }: Props) {
   async function loadFlags() {
     if (!userId) return;
 
-    const { data } = await supabase
+    setErrorMessage(null);
+
+    const { data, error } = await supabase
       .from("flag_queue")
       .select("*")
       .eq("user_id", userId)
       .order("created_at", { ascending: false });
+
+    if (error) {
+      setErrorMessage(error.message || "Failed to load review queue.");
+      setLoading(false);
+      return;
+    }
 
     if (!data) {
       setLoading(false);
@@ -106,7 +116,7 @@ export default function FlagQueueScreen({ navigation }: Props) {
 
   async function updateFlag(flag: FlagWithMedia, status: "approved" | "rejected" | "hidden") {
     // Update the flag_queue row
-    await supabase
+    const { error: flagError } = await supabase
       .from("flag_queue")
       .update({
         status,
@@ -115,24 +125,44 @@ export default function FlagQueueScreen({ navigation }: Props) {
       })
       .eq("id", flag.id);
 
+    if (flagError) {
+      Alert.alert("Error", flagError.message || "Failed to update review item.");
+      return;
+    }
+
     // Cascade to media and media_people for media flags
     if (flag.flag_type === "media") {
       if (status === "approved") {
-        await supabase
+        const { error: mediaError } = await supabase
           .from("media")
           .update({ verification_status: "verified" })
           .eq("id", flag.reference_id);
 
-        await supabase
+        if (mediaError) {
+          Alert.alert("Error", mediaError.message || "Failed to verify media.");
+          return;
+        }
+
+        const { error: mediaPeopleError } = await supabase
           .from("media_people")
           .update({ verified: true })
           .eq("media_id", flag.reference_id);
+
+        if (mediaPeopleError) {
+          Alert.alert("Error", mediaPeopleError.message || "Failed to verify tagged people.");
+          return;
+        }
       } else {
         // rejected or hidden
-        await supabase
+        const { error: mediaError } = await supabase
           .from("media")
           .update({ verification_status: "hidden" })
           .eq("id", flag.reference_id);
+
+        if (mediaError) {
+          Alert.alert("Error", mediaError.message || "Failed to hide media.");
+          return;
+        }
       }
     }
 
@@ -232,6 +262,15 @@ export default function FlagQueueScreen({ navigation }: Props) {
       <Text style={styles.subtitle}>
         Review AI-flagged items before they reach your loved one. Nothing gets through without your approval.
       </Text>
+
+      {errorMessage ? (
+        <View style={styles.errorBox}>
+          <Text style={styles.errorText}>{errorMessage}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadFlags}>
+            <Text style={styles.retryText}>Try Again</Text>
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       {/* Pending items */}
       {pendingFlags.length === 0 ? (
@@ -353,6 +392,32 @@ const styles = StyleSheet.create({
   emptyContainer: {
     alignItems: "center",
     marginVertical: 40,
+  },
+  errorBox: {
+    backgroundColor: "#3b1f2a",
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "#ff6b6b",
+  },
+  errorText: {
+    color: "#ffd6d6",
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  retryButton: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    backgroundColor: "#ff6b6b",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  retryText: {
+    color: "#fff",
+    fontWeight: "600",
+    fontSize: 13,
   },
   emptyIcon: {
     fontSize: 48,

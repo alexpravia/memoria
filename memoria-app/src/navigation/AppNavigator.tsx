@@ -24,6 +24,8 @@ import ViewLifeFactsScreen from "../screens/couser/ViewLifeFactsScreen";
 import ViewPeopleScreen from "../screens/couser/ViewPeopleScreen";
 import ViewEventsScreen from "../screens/couser/ViewEventsScreen";
 import ViewPhotosScreen from "../screens/couser/ViewPhotosScreen";
+import EditPersonScreen from "../screens/couser/EditPersonScreen";
+import EmergencyContactSettingsScreen from "../screens/couser/EmergencyContactSettingsScreen";
 
 // User screens
 import UserHomeScreen from "../screens/user/UserHomeScreen";
@@ -65,6 +67,8 @@ function CoUserStack() {
           <Stack.Screen name="ViewPeople" component={ViewPeopleScreen} />
           <Stack.Screen name="ViewEvents" component={ViewEventsScreen} />
           <Stack.Screen name="ViewPhotos" component={ViewPhotosScreen} />
+          <Stack.Screen name="EditPerson" component={EditPersonScreen} />
+          <Stack.Screen name="EmergencyContactSettings" component={EmergencyContactSettingsScreen} />
         </>
       ) : (
         // Dashboard - user profile exists
@@ -83,6 +87,8 @@ function CoUserStack() {
           <Stack.Screen name="ViewPeople" component={ViewPeopleScreen} />
           <Stack.Screen name="ViewEvents" component={ViewEventsScreen} />
           <Stack.Screen name="ViewPhotos" component={ViewPhotosScreen} />
+          <Stack.Screen name="EditPerson" component={EditPersonScreen} />
+          <Stack.Screen name="EmergencyContactSettings" component={EmergencyContactSettingsScreen} />
         </>
       )}
     </Stack.Navigator>

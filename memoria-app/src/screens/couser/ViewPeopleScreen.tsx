@@ -6,6 +6,7 @@ import {
   StyleSheet,
   ScrollView,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
@@ -32,6 +33,14 @@ export default function ViewPeopleScreen({ navigation }: Props) {
     loadPeople();
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = navigation.addListener("focus", () => {
+      loadPeople();
+    });
+
+    return unsubscribe;
+  }, [navigation, userId]);
+
   async function loadPeople() {
     if (!userId) return;
     const { data } = await supabase
@@ -42,6 +51,35 @@ export default function ViewPeopleScreen({ navigation }: Props) {
 
     setPeople(data || []);
     setLoading(false);
+  }
+
+  function confirmDelete(person: Person) {
+    Alert.alert(
+      `Delete ${person.full_name}?`,
+      "This cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: () => deletePerson(person.id),
+        },
+      ]
+    );
+  }
+
+  async function deletePerson(personId: string) {
+    const { error } = await supabase
+      .from("people")
+      .delete()
+      .eq("id", personId);
+
+    if (error) {
+      Alert.alert("Error", "Failed to delete. Please try again.");
+      return;
+    }
+
+    setPeople((prev) => prev.filter((p) => p.id !== personId));
   }
 
   if (loading) {
@@ -70,7 +108,25 @@ export default function ViewPeopleScreen({ navigation }: Props) {
       ) : (
         people.map((p) => (
           <View key={p.id} style={styles.personCard}>
-            <Text style={styles.personName}>{p.full_name}</Text>
+            <View style={styles.cardHeader}>
+              <Text style={styles.personName}>{p.full_name}</Text>
+              <View style={styles.cardActions}>
+                <TouchableOpacity
+                  onPress={() => navigation.navigate("EditPerson", { personId: p.id })}
+                  style={styles.editButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.editText}>Edit</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => confirmDelete(p)}
+                  style={styles.deleteButton}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Text style={styles.deleteText}>✕</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
             <Text style={styles.personRelation}>{p.relationship}</Text>
             {p.key_facts && p.key_facts.length > 0 && (
               <View style={styles.factsContainer}>
@@ -154,10 +210,40 @@ const styles = StyleSheet.create({
     borderLeftWidth: 4,
     borderLeftColor: "#7c4dff",
   },
+  cardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  cardActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  editButton: {
+    backgroundColor: "#3a3a5a",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginRight: 8,
+  },
+  editText: {
+    color: "#e0e0e0",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  deleteButton: {
+    padding: 4,
+  },
+  deleteText: {
+    color: "#ff5252",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   personName: {
     fontSize: 20,
     fontWeight: "bold",
     color: "#fff",
+    flex: 1,
   },
   personRelation: {
     fontSize: 15,

@@ -137,6 +137,7 @@ export default function ImportPhotosScreen({ navigation }: Props) {
       if (error) throw error;
 
       // Analyze photos with AI vision (non-blocking on failures)
+      let processingFailed = false;
       if (inserted && inserted.length > 0) {
         setUploadProgress("Analyzing photos...");
         try {
@@ -149,12 +150,15 @@ export default function ImportPhotosScreen({ navigation }: Props) {
           );
         } catch (err: any) {
           console.warn("Photo processing error:", err.message);
+          processingFailed = true;
         }
       }
 
       Alert.alert(
-        "Imported!",
-        `${selected.length} photo${selected.length > 1 ? "s" : ""} imported and queued for review.`,
+        processingFailed ? "Imported With Warnings" : "Imported!",
+        processingFailed
+          ? `${selected.length} photo${selected.length > 1 ? "s" : ""} imported, but some AI processing steps failed. Open Photos → Retry AI Processing or Review Queue.`
+          : `${selected.length} photo${selected.length > 1 ? "s" : ""} imported and queued for review.`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       );
     } catch (error: any) {
