@@ -8,6 +8,7 @@ These threads from a previous account contain the full history of work on this p
 - **T-019ce8b8-8008-729c-9344-35b6c75b8099** — Full review of Memoria context, implementation status, and recent fixes
 - **T-019cef56-210d-70e9-b449-ab86ab5b8ee0** — Photo intelligence pipeline: full AI photo processing (upload, vision analysis, tagging, flag queue, assistant context, chat display, briefing integration) + emergency card bug fix
 - **T-019cfe0f-0e80-70fb-8610-e5021490bd5d** — Bug fix batch (March 22, 2026): 4 fixes applied, NOT yet logged in progressLogs.md
+- **T-019d16a7-c602-723d-b09e-0b7a88480abd** — Editable imported contacts/people, emergency contact phone management, photo pipeline retry + queue hardening, briefing photo coverage expansion, and AGENTS/progress context updates
 
 ## Project Overview
 Memoria is a real-time context generator that helps people with Alzheimer's, dementia, and other memory impairments stay connected to reality. It combines a co-user's (caregiver/family) emotional intelligence with AI processing to build a personal database of the user's life and deliver it back to them daily.
@@ -37,26 +38,29 @@ Memoria is a real-time context generator that helps people with Alzheimer's, dem
 10. `pinned_notes` — "Things I want to remember" voice notes
 11. `sensitivity_filters` — Boundaries to hide distressing content
 
-## Current Status (as of March 22, 2026)
-**Phases 0 through 1C are complete, plus the photo intelligence pipeline.** The app has:
+## Current Status (as of April 6, 2026)
+**Phases 0 through 1C are complete, plus major reliability fixes for photo review and co-user editing flows.** The app has:
 - Role-based auth (user vs co-user)
 - Co-user onboarding (life facts, people, events, device imports for contacts/calendar/photos)
 - Co-user dashboard with tappable stat cards → view screens (ViewLifeFactsScreen, ViewPeopleScreen, ViewEventsScreen, ViewPhotosScreen)
+- Editing for imported contacts and manually added people (relationship, key facts, emotional notes, phone, email)
 - Sensitivity filters and flag/verification queue (enhanced with photo review UI)
 - Conversational AI assistant with filtered context (now includes photo/media context)
 - User home screen, morning briefing (TTS + slide animations + photo memories), emergency context card
 - Push notifications for daily events
 - **Photo intelligence pipeline**: Supabase Storage upload, AI vision analysis (`process-photo` Edge Function), auto-tagging, people identification, flag queue integration, inline photo display in chat, photo memories in briefing
+- Retry tooling for stuck pending photos plus queue backfill/review hardening so pending media always has a review path
+- Emergency contact phone captured on onboarding and editable later from the co-user dashboard
 - Back/Exit buttons on onboarding screens
 - Duplicate import filtering with "Already imported" badges
 - iOS photo `ph://` → `file://` URI fix
-- Emergency card bug fix (removed invalid `phone` column query)
+- Emergency card now reads co-user phone/email directly, shows phone above email, and avoids duplicate email rendering
 
-### Recent fixes (March 22, 2026 — T-019cfe0f, NOT yet in progressLogs.md):
-1. **Delete people** — `ViewPeopleScreen.tsx` now has delete buttons with confirmation on each person card (cascading deletes handle `media_people`/`sensitivity_filters`)
-2. **Photo import RLS fix** — Created and ran `supabase/fix_rls_policies.sql` adding RLS policies to `media`, `media_people`, `flag_queue`, and `storage.objects` (photos bucket) so co-users can insert for their linked patient. Already executed in Supabase Dashboard.
-3. **Emergency card email** — `EmergencyCardScreen.tsx` now fetches and displays the co-user's email from `co_users.email`, shown below phone number
-4. **Briefing photos on all slides** — `BriefingScreen.tsx` now shows user's `photo_url` on greeting, location, life facts, and closing slides (people/memories slides were already handled)
+### Recent fixes (April 6, 2026 — T-019d16a7-c602-723d-b09e-0b7a88480abd):
+1. **Editable people** — Added `EditPersonScreen.tsx` so co-users can edit imported contacts and any other people, including relationship, key facts, emotional notes, phone, and email
+2. **Emergency contact phone source of truth** — Added `co_users.phone`, updated onboarding and dashboard settings, and fixed `EmergencyCardScreen.tsx` to display phone above email from the co-user record
+3. **Pending photo recovery** — Hardened `photoProcessing.ts`, added retry processing in `ViewPhotosScreen.tsx`, and created queue/RLS SQL updates so pending media always has a review path
+4. **Broader briefing photo coverage** — Expanded `BriefingScreen.tsx` to assign photos to more applicable slides using verified fallback photos when available
 
 ## Key Files
 - `src/lib/assistant.ts` — AI context filtering and LLM calls

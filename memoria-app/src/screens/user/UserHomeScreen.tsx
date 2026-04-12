@@ -23,10 +23,11 @@ export default function UserHomeScreen({ navigation }: Props) {
   }, [userId]);
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.greeting}>Good Morning</Text>
+    <View testID="user-home-screen" style={styles.container}>
+      <Text testID="user-home-greeting" style={styles.greeting}>Good Morning</Text>
 
       <TouchableOpacity
+        testID="user-home-briefing-button"
         style={styles.startButton}
         onPress={() => navigation.navigate("Briefing")}
       >
@@ -34,6 +35,7 @@ export default function UserHomeScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <TouchableOpacity
+        testID="user-home-assistant-button"
         style={styles.assistantButton}
         onPress={() => navigation.navigate("Assistant")}
       >
@@ -41,13 +43,14 @@ export default function UserHomeScreen({ navigation }: Props) {
       </TouchableOpacity>
 
       <TouchableOpacity
+        testID="user-home-emergency-button"
         style={styles.emergencyButton}
         onPress={() => navigation.navigate("EmergencyCard")}
       >
         <Text style={styles.emergencyButtonText}>🆘 Who Am I?</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.signOutButton} onPress={signOut}>
+      <TouchableOpacity testID="user-home-signout-button" style={styles.signOutButton} onPress={signOut}>
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
     </View>

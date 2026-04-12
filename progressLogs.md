@@ -185,3 +185,33 @@
 
 ### Next Steps
 1. Fully test everything end-to-end and do not move forward until everything works correctly.
+
+---
+
+## April 12, 2026
+
+### Maestro iOS Smoke Test Stabilization
+
+- Stabilized the **Expo Go Maestro wrapper** in `memoria-app/scripts/maestro-ios.sh` so each run terminates any stale Expo Go instance before reopening the local `exp://` URL on the booted iOS simulator
+- Hardened the authenticated **Maestro login flows** for user briefing, user emergency card, and co-user smoke coverage so they now retry text entry, explicitly verify the email field actually contains the expected address, and avoid the earlier failure mode where the password was entered but the email field did not stick
+- Added **Expo Go cold-start handling** to the Maestro flows so they can tap into the local app when the simulator shows the intermediate Expo app tile or open prompt
+- Added **iOS system prompt handling** for the simulator's `Save Password?` sheet so it no longer blocks the login submit step during Maestro runs
+
+### Maestro Flow Reliability Improvements
+
+- Updated the **local login smoke flow** so it works reliably with fresh Expo Go launches and still verifies the Memoria login screen selectors are present
+- Adjusted the **briefing, emergency card, and co-user smoke assertions** to use the selectors that consistently surface through Expo Go / Maestro on iOS, avoiding false negatives from nested React Native text nodes that were present on-screen but not exposed with the expected test IDs
+- Removed an outdated **co-user save-success alert expectation** from the edit-person smoke flow and switched it to verify the real navigation behavior back to the people list after saving
+- Documented the new **Maestro login stability behavior** in `.maestro/README.md`, including fresh Expo Go launches, explicit email verification, and dismissal of the iOS password-save sheet
+
+### Validation
+
+- Ran `npm run maestro:test` successfully in `memoria-app`
+- Ran `npm run maestro:test:user:emergency` successfully in `memoria-app`
+- Ran `npm run maestro:test:user:briefing` successfully in `memoria-app`
+- Ran `npm run maestro:test:co-user` successfully in `memoria-app`
+
+### Next Steps
+1. Test everything end-to-end using Maestro.
+2. Make everything look nice and function correctly.
+3. Make the AI processing work correctly, with special emphasis on getting that pipeline fully reliable.

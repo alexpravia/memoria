@@ -6,7 +6,15 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "maestro:check": "sh -c 'export PATH=\"$PATH:$HOME/.maestro/bin\" && maestro --version'",
+    "maestro:studio": "sh -c 'export PATH=\"$PATH:$HOME/.maestro/bin\" && maestro studio'",
+    "maestro:test": "./scripts/maestro-ios.sh .maestro/ios-local-login-screen.yaml",
+    "maestro:test:ios:smoke": "./scripts/maestro-ios.sh .maestro/ios-local-login-screen.yaml",
+    "maestro:test:user:briefing": "sh -c ': \"${MAESTRO_USER_EMAIL:?Set MAESTRO_USER_EMAIL}\" && : \"${MAESTRO_USER_PASSWORD:?Set MAESTRO_USER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/login-to-briefing.yaml -e MAESTRO_USER_EMAIL=\"$MAESTRO_USER_EMAIL\" -e MAESTRO_USER_PASSWORD=\"$MAESTRO_USER_PASSWORD\"'",
+    "maestro:test:user:emergency": "sh -c ': \"${MAESTRO_USER_EMAIL:?Set MAESTRO_USER_EMAIL}\" && : \"${MAESTRO_USER_PASSWORD:?Set MAESTRO_USER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/login-to-emergency-card.yaml -e MAESTRO_USER_EMAIL=\"$MAESTRO_USER_EMAIL\" -e MAESTRO_USER_PASSWORD=\"$MAESTRO_USER_PASSWORD\"'",
+    "maestro:test:co-user": "sh -c ': \"${MAESTRO_COUSER_EMAIL:?Set MAESTRO_COUSER_EMAIL}\" && : \"${MAESTRO_COUSER_PASSWORD:?Set MAESTRO_COUSER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/couser-smoke.yaml -e MAESTRO_COUSER_EMAIL=\"$MAESTRO_COUSER_EMAIL\" -e MAESTRO_COUSER_PASSWORD=\"$MAESTRO_COUSER_PASSWORD\"'",
+    "maestro:test:all": "sh -c 'npm run maestro:test && npm run maestro:test:user:briefing && npm run maestro:test:user:emergency && npm run maestro:test:co-user'"
   },
   "dependencies": {
     "@expo/ngrok": "^4.1.3",

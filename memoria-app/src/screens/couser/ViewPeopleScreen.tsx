@@ -84,34 +84,44 @@ export default function ViewPeopleScreen({ navigation }: Props) {
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View testID="view-people-loading" style={styles.centered}>
         <ActivityIndicator size="large" color="#7c4dff" />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView testID="view-people-screen" style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <TouchableOpacity
+          testID="people-back-button"
+          accessibilityRole="button"
+          accessibilityLabel="Go back from people list"
+          onPress={() => navigation.goBack()}
+        >
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.title}>People</Text>
-      <Text style={styles.subtitle}>{people.length} {people.length === 1 ? "person" : "people"} saved</Text>
+      <Text style={styles.title} testID="people-title">People</Text>
+      <Text style={styles.subtitle} testID="people-subtitle">
+        {people.length} {people.length === 1 ? "person" : "people"} saved
+      </Text>
 
       {people.length === 0 ? (
-        <View style={styles.emptyState}>
+        <View testID="people-empty-state" style={styles.emptyState}>
           <Text style={styles.emptyText}>No people added yet</Text>
         </View>
       ) : (
-        people.map((p) => (
-          <View key={p.id} style={styles.personCard}>
+        people.map((p, index) => (
+          <View key={p.id} testID={`person-card-${index}`} style={styles.personCard}>
             <View style={styles.cardHeader}>
               <Text style={styles.personName}>{p.full_name}</Text>
               <View style={styles.cardActions}>
                 <TouchableOpacity
+                  testID={`edit-person-${index}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Edit ${p.full_name}`}
                   onPress={() => navigation.navigate("EditPerson", { personId: p.id })}
                   style={styles.editButton}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -119,6 +129,9 @@ export default function ViewPeopleScreen({ navigation }: Props) {
                   <Text style={styles.editText}>Edit</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
+                  testID={`delete-person-${index}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Delete ${p.full_name}`}
                   onPress={() => confirmDelete(p)}
                   style={styles.deleteButton}
                   hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -147,6 +160,9 @@ export default function ViewPeopleScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.addButton}
         onPress={() => navigation.navigate("AddPeople", { userId })}
+        testID="people-add-more"
+        accessibilityRole="button"
+        accessibilityLabel="Add more people"
       >
         <Text style={styles.addButtonText}>+ Add More People</Text>
       </TouchableOpacity>

@@ -40,6 +40,7 @@ export default function LoginScreen({ navigation }: Props) {
 
   return (
     <KeyboardAvoidingView
+      testID="login-screen"
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
@@ -47,6 +48,7 @@ export default function LoginScreen({ navigation }: Props) {
       <Text style={styles.subtitle}>Welcome back</Text>
 
       <TextInput
+        testID="login-email-input"
         style={styles.input}
         placeholder="Email"
         placeholderTextColor="#888"
@@ -57,6 +59,7 @@ export default function LoginScreen({ navigation }: Props) {
       />
 
       <TextInput
+        testID="login-password-input"
         style={styles.input}
         placeholder="Password"
         placeholderTextColor="#888"
@@ -66,6 +69,7 @@ export default function LoginScreen({ navigation }: Props) {
       />
 
       <TouchableOpacity
+        testID="login-submit-button"
         style={styles.button}
         onPress={handleLogin}
         disabled={loading}

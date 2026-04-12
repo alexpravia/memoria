@@ -15,6 +15,26 @@ type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
+const automationIds = {
+  screen: "co-user-home-screen",
+  viewLifeFactsCard: "co-user-home-view-life-facts",
+  viewPeopleCard: "co-user-home-view-people",
+  viewEventsCard: "co-user-home-view-events",
+  viewPhotosCard: "co-user-home-view-photos",
+  addLifeFactsButton: "co-user-home-add-life-facts",
+  addPeopleButton: "co-user-home-add-people",
+  addEventsButton: "co-user-home-add-events",
+  importContactsButton: "co-user-home-import-contacts",
+  importCalendarButton: "co-user-home-import-calendar",
+  importPhotosButton: "co-user-home-import-photos",
+  reviewQueueButton: "co-user-home-review-queue",
+  pendingFlagsBadge: "co-user-home-pending-flags-badge",
+  sensitivityFiltersButton: "co-user-home-sensitivity-filters",
+  setupUserLoginButton: "co-user-home-setup-user-login",
+  emergencyContactSettingsButton: "co-user-home-emergency-contact-settings",
+  signOutButton: "co-user-home-sign-out",
+} as const;
+
 export default function CoUserHomeScreen({ navigation }: Props) {
   const { userId, signOut } = useAuth();
   const [userName, setUserName] = useState("");
@@ -92,7 +112,13 @@ export default function CoUserHomeScreen({ navigation }: Props) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      testID={automationIds.screen}
+      accessibilityLabel="Co-user dashboard"
+      accessibilityHint="Shows dashboard controls for managing the user's experience"
+    >
       <Text style={styles.title}>Helper Dashboard</Text>
       <Text style={styles.subtitle}>
         Managing {userName ? userName + "'s" : "your loved one's"} experience
@@ -100,19 +126,47 @@ export default function CoUserHomeScreen({ navigation }: Props) {
 
       {/* Stats */}
       <View style={styles.statsRow}>
-        <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate("ViewLifeFacts")}>
+        <TouchableOpacity
+          style={styles.statCard}
+          onPress={() => navigation.navigate("ViewLifeFacts")}
+          testID={automationIds.viewLifeFactsCard}
+          accessibilityRole="button"
+          accessibilityLabel="Life facts overview"
+          accessibilityHint="Opens the saved life facts screen"
+        >
           <Text style={styles.statNumber}>{stats.lifeFacts}</Text>
           <Text style={styles.statLabel}>Life Facts</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate("ViewPeople")}>
+        <TouchableOpacity
+          style={styles.statCard}
+          onPress={() => navigation.navigate("ViewPeople")}
+          testID={automationIds.viewPeopleCard}
+          accessibilityRole="button"
+          accessibilityLabel="People overview"
+          accessibilityHint="Opens the saved people screen"
+        >
           <Text style={styles.statNumber}>{stats.people}</Text>
           <Text style={styles.statLabel}>People</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate("ViewEvents")}>
+        <TouchableOpacity
+          style={styles.statCard}
+          onPress={() => navigation.navigate("ViewEvents")}
+          testID={automationIds.viewEventsCard}
+          accessibilityRole="button"
+          accessibilityLabel="Events overview"
+          accessibilityHint="Opens the saved events screen"
+        >
           <Text style={styles.statNumber}>{stats.events}</Text>
           <Text style={styles.statLabel}>Events</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.statCard} onPress={() => navigation.navigate("ViewPhotos")}>
+        <TouchableOpacity
+          style={styles.statCard}
+          onPress={() => navigation.navigate("ViewPhotos")}
+          testID={automationIds.viewPhotosCard}
+          accessibilityRole="button"
+          accessibilityLabel="Photos overview"
+          accessibilityHint="Opens the saved photos screen"
+        >
           <Text style={styles.statNumber}>{stats.photos}</Text>
           <Text style={styles.statLabel}>Photos</Text>
         </TouchableOpacity>
@@ -122,6 +176,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.actionButton}
         onPress={() => navigation.navigate("AddLifeFacts", { userId })}
+        testID={automationIds.addLifeFactsButton}
+        accessibilityRole="button"
+        accessibilityLabel="Add life facts"
+        accessibilityHint="Opens the add life facts screen"
       >
         <Text style={styles.actionButtonText}>+ Add Life Facts</Text>
       </TouchableOpacity>
@@ -129,6 +187,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.actionButton}
         onPress={() => navigation.navigate("AddPeople", { userId })}
+        testID={automationIds.addPeopleButton}
+        accessibilityRole="button"
+        accessibilityLabel="Add people"
+        accessibilityHint="Opens the add people screen"
       >
         <Text style={styles.actionButtonText}>+ Add People</Text>
       </TouchableOpacity>
@@ -136,6 +198,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.actionButton}
         onPress={() => navigation.navigate("AddEvents", { userId })}
+        testID={automationIds.addEventsButton}
+        accessibilityRole="button"
+        accessibilityLabel="Add events"
+        accessibilityHint="Opens the add events screen"
       >
         <Text style={styles.actionButtonText}>+ Add Events</Text>
       </TouchableOpacity>
@@ -146,6 +212,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.importButton}
         onPress={() => navigation.navigate("ImportContacts")}
+        testID={automationIds.importContactsButton}
+        accessibilityRole="button"
+        accessibilityLabel="Import contacts"
+        accessibilityHint="Opens the contacts import screen"
       >
         <Text style={styles.actionButtonText}>📇 Import Contacts</Text>
       </TouchableOpacity>
@@ -153,6 +223,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.importButton}
         onPress={() => navigation.navigate("ImportCalendar")}
+        testID={automationIds.importCalendarButton}
+        accessibilityRole="button"
+        accessibilityLabel="Import calendar events"
+        accessibilityHint="Opens the calendar import screen"
       >
         <Text style={styles.actionButtonText}>📅 Import Calendar Events</Text>
       </TouchableOpacity>
@@ -160,6 +234,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.importButton}
         onPress={() => navigation.navigate("ImportPhotos")}
+        testID={automationIds.importPhotosButton}
+        accessibilityRole="button"
+        accessibilityLabel="Import photos"
+        accessibilityHint="Opens the photos import screen"
       >
         <Text style={styles.actionButtonText}>📸 Import Photos</Text>
       </TouchableOpacity>
@@ -170,11 +248,15 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.safetyButton}
         onPress={() => navigation.navigate("FlagQueue")}
+        testID={automationIds.reviewQueueButton}
+        accessibilityRole="button"
+        accessibilityLabel="Review queue"
+        accessibilityHint="Opens the pending review queue"
       >
         <View style={styles.flagRow}>
           <Text style={styles.actionButtonText}>🚩 Review Queue</Text>
           {pendingFlags > 0 && (
-            <View style={styles.badge}>
+            <View style={styles.badge} testID={automationIds.pendingFlagsBadge}>
               <Text style={styles.badgeText}>{pendingFlags}</Text>
             </View>
           )}
@@ -184,6 +266,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.safetyButton}
         onPress={() => navigation.navigate("SensitivityFilters")}
+        testID={automationIds.sensitivityFiltersButton}
+        accessibilityRole="button"
+        accessibilityLabel="Sensitivity filters"
+        accessibilityHint="Opens the sensitivity filters screen"
       >
         <Text style={styles.actionButtonText}>🛡️ Sensitivity Filters</Text>
       </TouchableOpacity>
@@ -191,6 +277,10 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.safetyButton}
         onPress={() => navigation.navigate("SetupUserLogin")}
+        testID={automationIds.setupUserLoginButton}
+        accessibilityRole="button"
+        accessibilityLabel="User login setup"
+        accessibilityHint="Opens the screen to create or update the user's login"
       >
         <Text style={styles.actionButtonText}>
           {hasUserLogin ? "🔑 Set Up Another User" : "🔑 Set Up Their Login"}
@@ -200,11 +290,22 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       <TouchableOpacity
         style={styles.safetyButton}
         onPress={() => navigation.navigate("EmergencyContactSettings")}
+        testID={automationIds.emergencyContactSettingsButton}
+        accessibilityRole="button"
+        accessibilityLabel="Emergency contact settings"
+        accessibilityHint="Opens emergency contact settings"
       >
         <Text style={styles.actionButtonText}>📞 Emergency Contact Number</Text>
       </TouchableOpacity>
 
-      <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+      <TouchableOpacity
+        style={styles.signOutButton}
+        onPress={handleSignOut}
+        testID={automationIds.signOutButton}
+        accessibilityRole="button"
+        accessibilityLabel="Sign out"
+        accessibilityHint="Signs out of the co-user account and returns to login"
+      >
         <Text style={styles.signOutText}>Sign Out</Text>
       </TouchableOpacity>
     </ScrollView>

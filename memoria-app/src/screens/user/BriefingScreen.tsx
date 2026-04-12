@@ -394,7 +394,7 @@ export default function BriefingScreen({ navigation }: any) {
 
   if (loading) {
     return (
-      <View style={styles.container}>
+      <View testID="briefing-loading" style={styles.container}>
         <ActivityIndicator size="large" color="#7c4dff" />
         <Text style={styles.loadingText}>Preparing your briefing...</Text>
       </View>
@@ -418,9 +418,9 @@ export default function BriefingScreen({ navigation }: any) {
   const slide = slides[currentSlide];
 
   return (
-    <View style={styles.container}>
+    <View testID="briefing-screen" style={styles.container}>
       {/* Progress */}
-      <View style={styles.progressBar}>
+      <View testID="briefing-progress-bar" style={styles.progressBar}>
         <View
           style={[
             styles.progressFill,
@@ -429,19 +429,19 @@ export default function BriefingScreen({ navigation }: any) {
         />
       </View>
 
-      <TouchableOpacity style={styles.exitButton} onPress={handleExit}>
+      <TouchableOpacity testID="briefing-exit-button" style={styles.exitButton} onPress={handleExit}>
         <Text style={styles.exitButtonText}>✕</Text>
       </TouchableOpacity>
 
       {/* Content */}
-      <View style={styles.slideContent}>
+      <View testID="briefing-slide-content" style={styles.slideContent}>
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           {slide.photoUrl && (
             <Image source={{ uri: slide.photoUrl }} style={styles.photo} />
           )}
-          <Text style={styles.mainText}>{slide.text}</Text>
+          <Text testID="briefing-slide-text" style={styles.mainText}>{slide.text}</Text>
           {slide.subtitle && (
-            <Text style={styles.subtitleText}>{slide.subtitle}</Text>
+            <Text testID="briefing-slide-subtitle" style={styles.subtitleText}>{slide.subtitle}</Text>
           )}
         </Animated.View>
       </View>
@@ -449,6 +449,7 @@ export default function BriefingScreen({ navigation }: any) {
       {/* Controls */}
       <View style={styles.controls}>
         <TouchableOpacity
+          testID="briefing-prev-button"
           style={[styles.navButton, currentSlide === 0 && styles.navButtonDisabled]}
           onPress={prevSlide}
           disabled={currentSlide === 0}
@@ -456,11 +457,11 @@ export default function BriefingScreen({ navigation }: any) {
           <Text style={styles.navButtonText}>← Back</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.replayButton} onPress={replaySlide}>
+        <TouchableOpacity testID="briefing-replay-button" style={styles.replayButton} onPress={replaySlide}>
           <Text style={styles.replayButtonText}>🔊</Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navButton} onPress={nextSlide}>
+        <TouchableOpacity testID="briefing-next-button" style={styles.navButton} onPress={nextSlide}>
           <Text style={styles.navButtonText}>
             {currentSlide === slides.length - 1 ? "Done" : "Next →"}
           </Text>

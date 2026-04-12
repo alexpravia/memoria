@@ -49,6 +49,7 @@ export default function SignUpScreen({ navigation }: Props) {
 
   return (
     <KeyboardAvoidingView
+      testID="signup-screen"
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
@@ -56,14 +57,18 @@ export default function SignUpScreen({ navigation }: Props) {
       <Text style={styles.subtitle}>Create your helper account</Text>
 
       <TextInput
+        testID="signup-full-name-input"
         style={styles.input}
         placeholder="Your Full Name"
         placeholderTextColor="#888"
         value={fullName}
         onChangeText={setFullName}
+        accessibilityLabel="Full name"
+        accessibilityHint="Enter your name for your helper account"
       />
 
       <TextInput
+        testID="signup-email-input"
         style={styles.input}
         placeholder="Email"
         placeholderTextColor="#888"
@@ -71,30 +76,50 @@ export default function SignUpScreen({ navigation }: Props) {
         onChangeText={setEmail}
         autoCapitalize="none"
         keyboardType="email-address"
+        accessibilityLabel="Email address"
+        accessibilityHint="Enter the email address for your helper account"
       />
 
       <TextInput
+        testID="signup-password-input"
         style={styles.input}
         placeholder="Password"
         placeholderTextColor="#888"
         value={password}
         onChangeText={setPassword}
         secureTextEntry
+        accessibilityLabel="Password"
+        accessibilityHint="Enter a password with at least 6 characters"
       />
 
       <TouchableOpacity
+        testID="signup-submit-button"
         style={styles.button}
         onPress={handleSignUp}
         disabled={loading}
+        accessibilityRole="button"
+        accessibilityLabel={loading ? "Creating helper account" : "Sign up as helper"}
+        accessibilityHint="Creates your helper account and sends an email confirmation link"
+        accessibilityState={{ disabled: loading, busy: loading }}
       >
         {loading ? (
-          <ActivityIndicator color="#fff" />
+          <ActivityIndicator
+            testID="signup-loading-indicator"
+            color="#fff"
+            accessibilityLabel="Creating helper account"
+          />
         ) : (
           <Text style={styles.buttonText}>Sign Up as Helper</Text>
         )}
       </TouchableOpacity>
 
-      <TouchableOpacity onPress={() => navigation.goBack()}>
+      <TouchableOpacity
+        testID="signup-login-link"
+        onPress={() => navigation.goBack()}
+        accessibilityRole="button"
+        accessibilityLabel="Back to log in"
+        accessibilityHint="Returns to the log in screen"
+      >
         <Text style={styles.linkText}>Already have an account? Log In</Text>
       </TouchableOpacity>
     </KeyboardAvoidingView>

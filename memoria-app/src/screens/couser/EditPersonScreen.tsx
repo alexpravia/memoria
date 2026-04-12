@@ -102,29 +102,31 @@ export default function EditPersonScreen({ navigation, route }: Props) {
       })
       .eq("id", personId);
 
-    setSaving(false);
-
     if (error) {
+      setSaving(false);
       Alert.alert("Error", error.message || "Failed to save changes.");
       return;
     }
 
-    Alert.alert("Saved", "This person's details were updated.", [
-      { text: "OK", onPress: () => navigation.goBack() },
-    ]);
+    navigation.goBack();
   }
 
   if (loading) {
     return (
-      <View style={styles.centered}>
+      <View testID="edit-person-loading" style={styles.centered}>
         <ActivityIndicator size="large" color="#7c4dff" />
       </View>
     );
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
+    <ScrollView testID="edit-person-screen" style={styles.container} contentContainerStyle={styles.content}>
+      <TouchableOpacity
+        testID="edit-person-back"
+        accessibilityRole="button"
+        accessibilityLabel="Go back from edit person"
+        onPress={() => navigation.goBack()}
+      >
         <Text style={styles.backText}>← Back</Text>
       </TouchableOpacity>
 
@@ -133,6 +135,8 @@ export default function EditPersonScreen({ navigation, route }: Props) {
 
       <Text style={styles.label}>Name *</Text>
       <TextInput
+        testID="edit-person-name"
+        accessibilityLabel="Full name"
         style={styles.input}
         value={fullName}
         onChangeText={setFullName}
@@ -142,6 +146,8 @@ export default function EditPersonScreen({ navigation, route }: Props) {
 
       <Text style={styles.label}>Relationship *</Text>
       <TextInput
+        testID="edit-person-relationship"
+        accessibilityLabel="Relationship"
         style={styles.input}
         value={relationship}
         onChangeText={setRelationship}
@@ -151,6 +157,8 @@ export default function EditPersonScreen({ navigation, route }: Props) {
 
       <Text style={styles.label}>Phone</Text>
       <TextInput
+        testID="edit-person-phone"
+        accessibilityLabel="Phone"
         style={styles.input}
         value={phone}
         onChangeText={setPhone}
@@ -161,6 +169,8 @@ export default function EditPersonScreen({ navigation, route }: Props) {
 
       <Text style={styles.label}>Email</Text>
       <TextInput
+        testID="edit-person-email"
+        accessibilityLabel="Email"
         style={styles.input}
         value={email}
         onChangeText={setEmail}
@@ -179,8 +189,16 @@ export default function EditPersonScreen({ navigation, route }: Props) {
           placeholder="Add a key fact"
           placeholderTextColor="#888"
           onSubmitEditing={addKeyFact}
+          testID="edit-person-keyfact-input"
+          accessibilityLabel="Add a key fact"
         />
-        <TouchableOpacity style={styles.addFactButton} onPress={addKeyFact}>
+        <TouchableOpacity
+          style={styles.addFactButton}
+          onPress={addKeyFact}
+          testID="edit-person-keyfact-add"
+          accessibilityRole="button"
+          accessibilityLabel="Add key fact"
+        >
           <Text style={styles.addFactButtonText}>+</Text>
         </TouchableOpacity>
       </View>
@@ -188,7 +206,12 @@ export default function EditPersonScreen({ navigation, route }: Props) {
       {keyFacts.map((fact, index) => (
         <View key={`${fact}-${index}`} style={styles.factRow}>
           <Text style={styles.factText}>{fact}</Text>
-          <TouchableOpacity onPress={() => removeKeyFact(index)}>
+          <TouchableOpacity
+            testID={`edit-person-keyfact-remove-${index}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Remove key fact ${index + 1}`}
+            onPress={() => removeKeyFact(index)}
+          >
             <Text style={styles.factRemove}>✕</Text>
           </TouchableOpacity>
         </View>
@@ -196,6 +219,8 @@ export default function EditPersonScreen({ navigation, route }: Props) {
 
       <Text style={styles.label}>Emotional Notes</Text>
       <TextInput
+        testID="edit-person-notes"
+        accessibilityLabel="Emotional notes"
         style={[styles.input, styles.notesInput]}
         value={emotionalNotes}
         onChangeText={setEmotionalNotes}
@@ -205,6 +230,9 @@ export default function EditPersonScreen({ navigation, route }: Props) {
       />
 
       <TouchableOpacity
+        testID="edit-person-save"
+        accessibilityRole="button"
+        accessibilityLabel="Save person changes"
         style={[styles.saveButton, saving && styles.saveButtonDisabled]}
         onPress={savePerson}
         disabled={saving}

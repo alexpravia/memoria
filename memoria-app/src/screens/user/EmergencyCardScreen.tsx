@@ -67,36 +67,37 @@ export default function EmergencyCardScreen({ navigation }: any) {
   }
 
   return (
-    <View style={styles.container}>
+    <View testID="emergency-card-screen" style={styles.container}>
       <Text style={styles.header}>🆘</Text>
 
-      <View style={styles.card}>
+      <View testID="emergency-card-info" style={styles.card}>
         <Text style={styles.label}>MY NAME IS</Text>
-        <Text style={styles.value}>{name}</Text>
+        <Text testID="emergency-card-name" style={styles.value}>{name}</Text>
 
         {location ? (
           <>
             <Text style={styles.label}>I LIVE IN</Text>
-            <Text style={styles.value}>{location}</Text>
+            <Text testID="emergency-card-location" style={styles.value}>{location}</Text>
           </>
         ) : null}
 
         {contactName ? (
-          <>
+          <View testID="emergency-card-contact-block">
             <Text style={styles.label}>MY EMERGENCY CONTACT</Text>
-            <Text style={styles.contactValue} numberOfLines={1} adjustsFontSizeToFit>{contactName}</Text>
+            <Text testID="emergency-card-contact-name" style={styles.contactValue} numberOfLines={1} adjustsFontSizeToFit>{contactName}</Text>
             <Text style={styles.relation}>({contactRelation})</Text>
             {contactPhone ? (
-              <Text style={styles.phone}>{contactPhone}</Text>
+              <Text testID="emergency-card-contact-phone" style={styles.phone}>{contactPhone}</Text>
             ) : null}
             {contactEmail ? (
-              <Text style={styles.email}>{contactEmail}</Text>
+              <Text testID="emergency-card-contact-email" style={styles.email}>{contactEmail}</Text>
             ) : null}
-          </>
+          </View>
         ) : null}
       </View>
 
       <TouchableOpacity
+        testID="emergency-card-back-button"
         style={styles.backButton}
         onPress={() => navigation.goBack()}
       >
