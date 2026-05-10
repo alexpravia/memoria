@@ -11,6 +11,7 @@ import {
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
 import { supabase } from "../../../lib/supabase";
+import { embedAndStore } from "../../../lib/embeddings";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -80,8 +81,25 @@ export default function AddPeopleScreen({ navigation, route }: Props) {
         emotional_notes: p.emotional_notes || null,
       }));
 
-      const { error } = await supabase.from("people").insert(rows);
+      const { data: inserted, error } = await supabase
+        .from("people")
+        .insert(rows)
+        .select("id, full_name, relationship, key_facts, emotional_notes");
       if (error) throw error;
+
+      // Fire-and-forget: embed each new person. Failures must NOT block the user.
+      (inserted || []).forEach((row: any) => {
+        const text = [
+          row.full_name,
+          row.relationship,
+          (row.key_facts || []).join(" "),
+          row.emotional_notes || "",
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        void embedAndStore("people", row.id, text);
+      });
 
       navigation.navigate("AddEvents", { userId });
     } catch (error: any) {

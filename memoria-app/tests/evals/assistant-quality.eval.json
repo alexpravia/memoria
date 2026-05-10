@@ -1,0 +1,177 @@
+{
+  "name": "assistant-quality: 15 realistic Phase B tool-using questions",
+  "description": "End-to-end agentic assistant quality cases. Each case sends `query` to the deployed `ask-assistant` Edge Function (against the canonical seeded fixture from rag-recall) and checks the final `answer` string against assertions. Assertion types: substring (string OR string[]), no_substring (string OR string[]), regex (string), judge (LLM-as-judge with rubric + threshold). Eval runner is upgraded in Phase C to execute these.",
+  "model": "gpt-4o-mini",
+  "fixture": {
+    "user_alias": "rag-eval-user",
+    "expects_seeded": true,
+    "shared_with": "tests/evals/rag-recall.eval.json"
+  },
+  "cases": [
+    {
+      "name": "identifies a known person by name",
+      "query": "Who is Maria?",
+      "assertions": [
+        { "type": "substring", "value": "Maria" },
+        { "type": "no_substring", "value": "I don't have that information" }
+      ]
+    },
+    {
+      "name": "identifies a daughter by relationship",
+      "query": "Tell me about my daughter Sarah",
+      "assertions": [
+        { "type": "substring", "value": "Sarah" },
+        {
+          "type": "judge",
+          "value": "Response is warm, in second person, and uses the word 'daughter' or otherwise acknowledges the family relationship.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "warm reply about tomorrow's events",
+      "query": "What am I doing tomorrow?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response is warm, gentle, reassuring, and either lists tomorrow's events or kindly says nothing is on the calendar.",
+          "rubric": "Score 1-5 on warmth + correctness. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "reassures a scared user without medicalising",
+      "query": "I'm scared",
+      "assertions": [
+        {
+          "type": "no_substring",
+          "value": ["medical", "doctor", "hospital", "diagnos"]
+        },
+        {
+          "type": "judge",
+          "value": "Response is calm, warm, and reassuring. Acknowledges the feeling. Does NOT diagnose or recommend medical action.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "shows photos of a known person",
+      "query": "Show me my grandson",
+      "assertions": [
+        {
+          "type": "regex",
+          "value": "(photo|picture|image|here|don't have)"
+        }
+      ]
+    },
+    {
+      "name": "responds gently when asked about an unknown topic",
+      "query": "What is my favourite color?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response acknowledges not knowing, in a warm and non-judgemental way, and gently offers that the helper can add it.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "recalls a marriage life fact",
+      "query": "When did I get married?",
+      "assertions": [
+        { "type": "substring", "value": "1972" }
+      ]
+    },
+    {
+      "name": "recalls a retirement life fact",
+      "query": "When did I retire?",
+      "assertions": [
+        { "type": "substring", "value": "2010" }
+      ]
+    },
+    {
+      "name": "answers profile question (location)",
+      "query": "Where do I live?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response either states the location stored in the user's profile or, if profile has no location, kindly says it's not known yet.",
+          "rubric": "Score 1-5 on warmth + accuracy. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "lists upcoming doctor appointment",
+      "query": "When is my next doctor appointment?",
+      "assertions": [
+        { "type": "substring", "value": "doctor" }
+      ]
+    },
+    {
+      "name": "describes a beach photo memory",
+      "query": "Tell me about a beach memory",
+      "assertions": [
+        { "type": "substring", "value": "beach" },
+        {
+          "type": "judge",
+          "value": "Response references the seeded beach photo (umbrellas, seagulls, or similar) and is warm.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "neighbour lookup by relationship",
+      "query": "Who is my neighbour?",
+      "assertions": [
+        { "type": "substring", "value": "Maria" }
+      ]
+    },
+    {
+      "name": "recurring routine reminder",
+      "query": "What do I do on weekends?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response is warm and either describes seeded routine events (e.g. gardening club) or kindly says nothing is on file.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "never claims to filter or hide information",
+      "query": "Are you keeping anything from me?",
+      "assertions": [
+        {
+          "type": "no_substring",
+          "value": ["filter", "hidden", "blocked", "cannot show"]
+        },
+        {
+          "type": "judge",
+          "value": "Response is honest and warm. Does NOT mention filtering, sensitivity, or hidden content.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "stays in second person",
+      "query": "Tell me about myself",
+      "assertions": [
+        { "type": "regex", "value": "\\bYou\\b|\\byour\\b" },
+        {
+          "type": "judge",
+          "value": "Response addresses the user in second person ('You', 'Your') and is warm.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    }
+  ]
+}

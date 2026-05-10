@@ -215,3 +215,92 @@
 1. Test everything end-to-end using Maestro.
 2. Make everything look nice and function correctly.
 3. Make the AI processing work correctly, with special emphasis on getting that pipeline fully reliable.
+
+---
+
+## May 10, 2026
+
+### AI-Native Migration (Phases 0–E)
+
+- Added **pgvector schema** (`add_embeddings.sql`) — `embedding`/`embedding_text`/`embedding_updated_at` columns on `media`, `life_facts`, `people`, and `events`, plus IVFFlat indexes and a `match_memories` RPC for unified semantic search across all four tables
+- Created **`conversations` and `messages` tables** (`conversations_messages.sql`) with RLS so the assistant can persist multi-turn chat threads and tool-call records
+- Created **`assistant_memory` table** (`assistant_memory.sql`) to store Memo's notes about the user (kind, content, importance, status) with importance-based auto-flagging
+- Created **`briefings` table** (`briefings.sql`) for AI-generated daily slide decks (slides as JSONB, status workflow: `draft` → `approved` → `delivered`)
+- Added **`sensitivity_decisions` cache table** and `intent_text`/`intent_embedding` columns on `sensitivity_filters` (`sensitivity_upgrade.sql`) to power intent-aware classification
+- Added **`ensure_photos_bucket.sql`** to confirm the `photos` Storage bucket exists with public read access and the right RLS policies
+- Built six Edge Functions (Deno):
+  - **`embed`** — proxy for OpenAI `text-embedding-3-small`
+  - **`check-sensitivity`** — intent-aware classifier using `gpt-4o-mini` to judge content against natural-language rules
+  - **`ask-assistant`** — fully agentic tool-calling loop with conversation persistence, memory injection, and tool execution (`search_memories`, `get_person`, `list_events`, `get_life_facts`, `get_user_profile`, `remember_about_user`, `recall_about_user`, `flag_for_co_user`)
+  - **`process-photo`** — AI vision pipeline (description + tags + people + needs-review flag)
+  - **`generate-briefing`** — slide JSON generator with retry-on-invalid validation and a candidate photo pool
+  - **`tts`** — OpenAI TTS proxy (`tts-1`, `nova` voice) returning raw audio bytes
+- Added **client library modules** (`src/lib/`): `assistant.ts` (thin agentic wrapper), `tools.ts` (canonical tool definitions, mirrored in the Edge Function), `embeddings.ts` (RAG entry point), `sensitivity.ts` (fail-OPEN classifier wrapper), `memory.ts` (persistent notes), `briefing.ts` (generate/get/approve/validate/`resolveSlidePhotos`), `tts.ts` (OpenAI TTS with LRU disk cache + `expo-speech` fallback)
+- Built **`AIMemoryScreen` ("Memo's Notes")** for co-users to review/edit/pin/suppress/delete Memo's persistent memories
+- Built **`BriefingPreviewScreen`** for co-users to generate, edit, approve, and regenerate AI briefings, with a Today/Tomorrow date toggle for in-session testing
+- Updated **`AssistantScreen`** for conversation threading (`conversationId`), "Memo" branding, and inline `PhotoLightbox` integration; system prompt now forbids markdown links / file paths / raw IDs in answers
+- Updated **`BriefingScreen`** with an AI-orchestrated rendering path that falls back to the procedural builder when no approved briefing exists; pre-warms next-slide TTS for instant playback
+- Added **`PhotoLightbox` + `usePhotoLightbox` + `PhotoTagsView`** components for full-screen photo viewing with description/tag/people overlays
+- Migrated audio stack from **`expo-av` to `expo-audio`** (`createAudioPlayer` + `setAudioModeAsync` with `playsInSilentMode`/`shouldPlayInBackground`); removed all `expo-av` references
+- Added **`expo-image-manipulator`** for HEIC→JPEG conversion during photo import
+- Renamed the AI assistant to **"Memo"** across every user-facing string (button labels, greeting, screen titles, accessibility labels, system prompt identity); the project name "Memoria" stays in code/files
+
+### Photo Pipeline Polish & Bug-Fix Waves
+
+- Fixed **TTS empty-payload bug** by replacing `supabase.functions.invoke('tts')` with a direct `fetch()` against `${SUPABASE_URL}/functions/v1/tts` so binary responses are read via `arrayBuffer()` instead of being JSON-parsed and stripped
+- Fixed **assistant photo-limit defaults** — `search_memories` now defaults to `limit:1` when the caller doesn't specify; system prompt explicitly distinguishes singular ("show me a photo" → 1) from plural ("show me photos" → 3-5)
+- Hardened **`ImportPhotosScreen`** to hard-fail on upload errors (no more silent local-URL inserts) and validate the `http(s)` prefix before insert
+- Hardened **`processPhoto`** with an early guard that refuses to send any non-`http` URL to the vision Edge Function and immediately marks the row hidden — eliminates the recurring "Edge Function returned a non-2xx status code" review-queue error caused by `file://` URIs
+- Replaced the **photo verification logic** so a photo auto-verifies whenever `needs_review === false`, regardless of whether people are present; old logic required `people_identified.length > 0`, which forced every landscape/scenery/object photo into the review queue
+- Rewrote the **`process-photo` vision prompt** to (a) require ONE short sentence (under 15 words) for the description with examples and a forbidden-paragraphs rule, (b) require 3–8 literal-content tags drawn from a wide vocabulary (landscapes, nature, objects, animals, etc.) with no empty arrays, and (c) only set `needs_review=true` for unidentified faces / sensitive content / very poor quality — explicitly NOT for photos with no people
+- Made **`validateSlide`** tolerate any non-string `photo_id` (treats as missing) and made **`generate-briefing`** strip non-string `photo_id` shapes before validation; tightened the prompt schema to forbid arrays/objects/numbers/booleans for `photo_id`
+- Made **`resolveSlidePhotos`** filter `verification_status='hidden'` rows at the query level and post-filter rows whose `file_url` isn't `http(s)` — slides referencing bad rows leave `photo_url` undefined so the renderer falls back gracefully
+- Made **`BriefingScreen`** render a large 4:3 rectangular photo (replaces the 150×150 round avatar), self-heal on `<Image onError>` by returning `null`, and run a new `backfillPhotos` helper that fills missing `photo_url` values on `greeting`/`person`/`memory_photo` slides from a verified-recent-media pool plus the user profile photo
+- Added **persistent assistant memory** wired end-to-end: Memo writes via `remember_about_user`, recalls via `recall_about_user`, co-user reviews/pins/suppresses/deletes in `AIMemoryScreen`; high-importance memories auto-flag for co-user review
+- Added **AI-orchestrated briefings** end-to-end: the Edge Function gathers profile/events/memories/sensitivity rules/photo pool in parallel, prompts `gpt-4o-mini` for 6–12 ordered slides, validates server-side with retry-on-invalid, upserts on `(user_id, briefing_date)`, and persists with `status='draft'`; co-user previews/edits/approves; user-side `BriefingScreen` reads only `status='approved' | 'delivered'` rows and falls back to the procedural builder when nothing is approved
+
+### Lightbox / Tap UX / Memo's Notes
+
+- Replaced the **`PhotoLightbox`** layout with image-first design — the photo fills the screen via `resizeMode='contain'` (no `aspectRatio:1` cap, no `ScrollView`) and AI metadata overlays in a translucent **bottom-left** card with a top-left **ⓘ** toggle to show/hide
+- Switched from **double-tap to single-tap** to enlarge — replaced `useDoubleTap` (300ms `useRef` threshold) with `useTapToOpen` (a thin `useCallback` wrapper, no timing) across `ViewPhotosScreen`, `FlagQueueScreen`, `BriefingScreen`, `AssistantScreen`, `BriefingPreviewScreen`
+- Made the **lightbox tag overlay full-width** (left:16, right:16) instead of capped at 70%, removed the `numberOfLines={2}` description clamp so the full sentence wraps, bumped compact-mode font to 14px white, and increased padding so descriptions are no longer truncated with "…"
+- Fixed the **lightbox tag slider** by replacing the wrapping `Pressable` with a `View` using `onStartShouldSetResponder={() => true}` and `onMoveShouldSetResponder={() => false}` — taps still don't dismiss the modal but the inner horizontal `ScrollView` now receives the pan gesture; added `showsHorizontalScrollIndicator={true}` in compact mode so the slider is discoverable
+- Added **scroll affordance arrows** on the kind-filter row in `AIMemoryScreen` — ‹ / › chevrons appear/disappear based on scroll position and tap to scroll 120px in each direction
+
+### Photo Storage Hardening & Cleanup Tooling
+
+- Removed the **front-end auto-hide** behavior from `<Image onError>` in `ViewPhotosScreen` and `FlagQueueScreen` — the tile still hides locally on render failure, but no longer writes `verification_status='hidden'` to the DB; transient simulator/network blips were nuking perfectly good photos
+- Extended **`repair-broken-photos.ts`** to detect 0-byte http uploads via HEAD requests (in addition to the existing `file://` detection); now also clears `ai_tags` and `description` when hiding a row so stale text can't leak into chat/briefings via search
+- Added **`reprocessAllPhotos(userId)`** in `photoProcessing.ts` that resets every non-hidden http photo back to `pending`, clears stale AI metadata, and re-runs `processPhoto` — wired up to a new co-user **"Re-tag All Photos With AI"** button on `ViewPhotosScreen`
+- Added **`scripts/reset-photos-for-retag.ts`** — standalone script (`--user <id> --apply`) that bulk-resets every non-hidden http photo for one user back to `pending`, clears `ai_tags`/`description`, and ensures a pending `flag_queue` row exists; mirrors the `repair-broken-photos.ts` pattern (env vars, dry-run by default, idempotent); shipped with a README documenting the cost implication
+
+### Live DB Cleanup (Test User: 42cd6787-…)
+
+- Ran **`repair-broken-photos.ts --apply`** against production: 4 legacy `file://` HEIC rows hidden (cleared `ai_tags` and `description` and pending flag-queue rows on the same operation)
+- Identified and hid **5 zero-byte JPEG uploads** in the `photos` Storage bucket (HEIC→JPEG conversion silently failed during a prior import session, leaving empty objects that crashed the vision API with `invalid_image`)
+- Restored **5 photos** that the old front-end onError self-heal had spuriously marked hidden during a flaky simulator session
+- Drove a **CLI re-tag pass** through the redeployed `process-photo` Edge Function for all remaining pending photos: 5 verified with one-sentence descriptions and 5–8 literal-content tags each (e.g. "A serene misty landscape at dawn with distant trees", "A grand building with tall spires and a lush green lawn")
+- Final live-DB state for Test User: **5 verified** (good photos with short descriptions and content tags) + **9 hidden** (4 file:// + 5 zero-byte) — gallery, review queue, briefings, and assistant chat all only see the 5 working photos
+
+### Edge Function Deploys & Validation
+
+- Deployed `process-photo` and `generate-briefing` Edge Functions to the live Supabase project (`zpxyqomebbjadqvgpapw`) multiple times across the day as the prompt and validation logic were refined
+- Test suite now at **127 unit tests** across 7 files (`src/lib/{assistant,embeddings,tools,sensitivity,memory,briefing,tts}.test.ts`) — added 5 new tests for `validateSlide` non-string `photo_id` tolerance, plus 2 new tests for `resolveSlidePhotos` hidden + non-http filtering
+- Wrote 5 AI eval JSON files (`tests/evals/`) for non-deterministic behavior coverage: assistant quality, sensitivity judgment, briefing quality, RAG recall, memory formation
+- CI gate (`npx tsc --noEmit && npm test`) passing clean at end of session
+
+### Flags for Next Session
+
+- The front-end `<Image onError>` self-heal NO LONGER writes `verification_status='hidden'` to the DB — the only safety nets for broken photos are the `processPhoto` early guard (`file://` and other non-http URLs) and the `repair-broken-photos.ts` script (file:// + 0-byte detection). If a transient fetch failure ever leaves a good photo looking broken in the UI, the row is fine and reload will recover it
+- Five zero-byte JPEGs survived in Storage from an older import session (HEIC→JPEG silent failure). Future imports go through hardened `ImportPhotosScreen` that hard-fails on upload error, but **monitor newly imported batches**; if more zero-byte rows appear, add an extra fetch+content-length check inside the import loop itself
+- The `reset-photos-for-retag.ts` script does NOT unhide rows. If `onError` ever does hide a good photo (race during a script run), an admin needs to manually `update media set verification_status='pending' where ...` via SQL
+- The lightbox tag-pan fix uses a `View + onStartShouldSetResponder=true / onMoveShouldSetResponder=false` pattern. If any other component embeds a horizontal `ScrollView` inside a touch responder, mirror this pattern or the pan will be intercepted
+- Memo's chat (assistant) still has an outstanding behavioral issue the user wants addressed before Phase 2 — flagged below in Next Steps
+
+### Next Steps
+
+1. Test out the entire implementation fully end-to-end (co-user onboarding, photo import, AI re-tag, briefing generation/approval/delivery, assistant chat with photos and memory, sensitivity classifier, emergency card) and surface any remaining bugs.
+2. Fix the outstanding issue with Memo's chat (the assistant) — investigate what's broken and resolve before any Phase 2 work begins.
+3. Do NOT begin Phase 2 ("Tell Me About Your Day" — voice journaling, recall exercises, mood/tone awareness) until everything in Phase 1 works correctly.
+4. After full end-to-end verification, consider running `repair-broken-photos.ts` on any other linked users to clean up legacy media.
+5. Consider tightening the photo import flow with a post-upload size sanity check (`content-length > 0`) so the 0-byte HEIC→JPEG failure mode can never regress.

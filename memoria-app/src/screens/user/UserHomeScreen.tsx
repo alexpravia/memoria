@@ -39,7 +39,7 @@ export default function UserHomeScreen({ navigation }: Props) {
         style={styles.assistantButton}
         onPress={() => navigation.navigate("Assistant")}
       >
-        <Text style={styles.assistantButtonText}>💬 Ask Me Anything</Text>
+        <Text style={styles.assistantButtonText}>💬 Talk to Memo</Text>
       </TouchableOpacity>
 
       <TouchableOpacity

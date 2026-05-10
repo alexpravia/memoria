@@ -1,0 +1,107 @@
+appId: host.exp.Exponent
+tags:
+  - smoke
+  - co-user
+
+---
+
+- runFlow:
+    when:
+      visible: "memoria-app"
+    commands:
+      - tapOn: "memoria-app"
+
+- runFlow:
+    when:
+      visible: 'Open in "Expo Go"'
+    commands:
+      - tapOn: "Open"
+
+- runFlow:
+    when:
+      visible:
+        id: "login-screen"
+    commands:
+      - retry:
+          maxRetries: 3
+          commands:
+            - tapOn:
+                id: "login-email-input"
+                retryTapIfNoChange: true
+            - eraseText: 100
+            - inputText: ${MAESTRO_COUSER_EMAIL}
+            - copyTextFrom:
+                id: "login-email-input"
+            - assertTrue:
+                condition: ${maestro.copiedText == MAESTRO_COUSER_EMAIL}
+                label: Email field contains the expected co-user email
+      - retry:
+          maxRetries: 3
+          commands:
+            - tapOn:
+                id: "login-password-input"
+                retryTapIfNoChange: true
+            - eraseText: 100
+            - inputText: ${MAESTRO_COUSER_PASSWORD}
+            - copyTextFrom:
+                id: "login-password-input"
+            - assertTrue:
+                condition: ${maestro.copiedText.length == MAESTRO_COUSER_PASSWORD.length}
+                label: Password field contains the expected number of characters
+      - hideKeyboard
+      - runFlow:
+          when:
+            visible: "Save Password?"
+          commands:
+            - tapOn: "Not Now"
+      - runFlow:
+          when:
+            visible:
+              id: "login-submit-button"
+          commands:
+            - tapOn:
+                id: "login-submit-button"
+                retryTapIfNoChange: true
+
+- extendedWaitUntil:
+    visible:
+      id: "co-user-home-screen"
+    timeout: 20000
+
+- tapOn:
+    id: "co-user-home-view-people"
+
+- extendedWaitUntil:
+    visible:
+      id: "view-people-screen"
+    timeout: 15000
+
+- tapOn:
+    id: "edit-person-.*"
+
+- extendedWaitUntil:
+    visible:
+      id: "edit-person-screen"
+    timeout: 15000
+
+- scrollUntilVisible:
+    element:
+      id: "edit-person-save"
+    direction: DOWN
+    timeout: 5000
+
+- tapOn:
+    id: "edit-person-save"
+
+- extendedWaitUntil:
+    visible:
+      id: "view-people-screen"
+    timeout: 10000
+
+- tapOn:
+    id: "people-back-button"
+
+- extendedWaitUntil:
+    visible:
+      id: "co-user-home-screen"
+    timeout: 10000

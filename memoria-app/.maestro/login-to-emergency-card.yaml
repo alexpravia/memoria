@@ -1,0 +1,94 @@
+appId: host.exp.Exponent
+tags:
+  - smoke
+  - user
+  - emergency
+
+---
+
+- runFlow:
+    when:
+      visible: "memoria-app"
+    commands:
+      - tapOn: "memoria-app"
+
+- runFlow:
+    when:
+      visible: 'Open in "Expo Go"'
+    commands:
+      - tapOn: "Open"
+
+- runFlow:
+    when:
+      visible:
+        id: "login-screen"
+    commands:
+      - retry:
+          maxRetries: 3
+          commands:
+            - tapOn:
+                id: "login-email-input"
+                retryTapIfNoChange: true
+            - eraseText: 100
+            - inputText: ${MAESTRO_USER_EMAIL}
+            - copyTextFrom:
+                id: "login-email-input"
+            - assertTrue:
+                condition: ${maestro.copiedText == MAESTRO_USER_EMAIL}
+                label: Email field contains the expected user email
+      - retry:
+          maxRetries: 3
+          commands:
+            - tapOn:
+                id: "login-password-input"
+                retryTapIfNoChange: true
+            - eraseText: 100
+            - inputText: ${MAESTRO_USER_PASSWORD}
+            - copyTextFrom:
+                id: "login-password-input"
+            - assertTrue:
+                condition: ${maestro.copiedText.length == MAESTRO_USER_PASSWORD.length}
+                label: Password field contains the expected number of characters
+      - hideKeyboard
+      - runFlow:
+          when:
+            visible: "Save Password?"
+          commands:
+            - tapOn: "Not Now"
+      - runFlow:
+          when:
+            visible:
+              id: "login-submit-button"
+          commands:
+            - tapOn:
+                id: "login-submit-button"
+                retryTapIfNoChange: true
+
+- extendedWaitUntil:
+    visible:
+      id: "user-home-screen"
+    timeout: 20000
+
+- tapOn:
+    id: "user-home-emergency-button"
+
+- extendedWaitUntil:
+    visible:
+      id: "emergency-card-screen"
+    timeout: 10000
+
+- assertVisible:
+    id: "emergency-card-info"
+
+- extendedWaitUntil:
+    visible:
+      id: "emergency-card-contact-block"
+    timeout: 10000
+
+- tapOn:
+    id: "emergency-card-back-button"
+
+- extendedWaitUntil:
+    visible:
+      id: "user-home-screen"
+    timeout: 10000

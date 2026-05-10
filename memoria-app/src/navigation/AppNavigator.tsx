@@ -26,6 +26,8 @@ import ViewEventsScreen from "../screens/couser/ViewEventsScreen";
 import ViewPhotosScreen from "../screens/couser/ViewPhotosScreen";
 import EditPersonScreen from "../screens/couser/EditPersonScreen";
 import EmergencyContactSettingsScreen from "../screens/couser/EmergencyContactSettingsScreen";
+import AIMemoryScreen from "../screens/couser/AIMemoryScreen";
+import BriefingPreviewScreen from "../screens/couser/BriefingPreviewScreen";
 
 // User screens
 import UserHomeScreen from "../screens/user/UserHomeScreen";
@@ -69,6 +71,8 @@ function CoUserStack() {
           <Stack.Screen name="ViewPhotos" component={ViewPhotosScreen} />
           <Stack.Screen name="EditPerson" component={EditPersonScreen} />
           <Stack.Screen name="EmergencyContactSettings" component={EmergencyContactSettingsScreen} />
+          <Stack.Screen name="AIMemory" component={AIMemoryScreen} />
+          <Stack.Screen name="BriefingPreview" component={BriefingPreviewScreen} />
         </>
       ) : (
         // Dashboard - user profile exists
@@ -89,6 +93,8 @@ function CoUserStack() {
           <Stack.Screen name="ViewPhotos" component={ViewPhotosScreen} />
           <Stack.Screen name="EditPerson" component={EditPersonScreen} />
           <Stack.Screen name="EmergencyContactSettings" component={EmergencyContactSettingsScreen} />
+          <Stack.Screen name="AIMemory" component={AIMemoryScreen} />
+          <Stack.Screen name="BriefingPreview" component={BriefingPreviewScreen} />
         </>
       )}
     </Stack.Navigator>

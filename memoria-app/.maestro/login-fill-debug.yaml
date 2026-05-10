@@ -1,0 +1,32 @@
+appId: host.exp.Exponent
+---
+- runFlow:
+    when:
+      visible: "memoria-app"
+    commands:
+      - tapOn: "memoria-app"
+- runFlow:
+    when:
+      visible: 'Open in "Expo Go"'
+    commands:
+      - tapOn: "Open"
+- extendedWaitUntil:
+    visible:
+      id: "login-screen"
+    timeout: 30000
+- tapOn:
+    id: "login-email-input"
+- setClipboard: "memoria.maestro.user.202604101747@gmail.com"
+- pasteText
+- tapOn:
+    id: "login-password-input"
+- setClipboard: "MemoriaUI123!"
+- pasteText
+- hideKeyboard
+- tapOn:
+    id: "login-submit-button"
+    retryTapIfNoChange: true
+- extendedWaitUntil:
+    visible:
+      id: "user-home-screen"
+    timeout: 20000

@@ -11,9 +11,10 @@ import {
   Platform,
   Image,
 } from "react-native";
-import * as Speech from "expo-speech";
+import * as tts from "../../lib/tts";
 import { useAuth } from "../../context/AuthContext";
 import { askAssistant } from "../../lib/assistant";
+import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
 
 interface Message {
   role: "user" | "assistant";
@@ -26,12 +27,14 @@ export default function AssistantScreen({ navigation }: any) {
   const [messages, setMessages] = useState<Message[]>([
     {
       role: "assistant",
-      text: "Hello! I'm here to help. You can ask me anything about yourself, your family, or your schedule.",
+      text: "Hi, I'm Memo. You can ask me anything about yourself, your family, or your schedule.",
     },
   ]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [conversationId, setConversationId] = useState<string | undefined>(undefined);
   const scrollRef = useRef<ScrollView>(null);
+  const { open, lightbox } = usePhotoLightbox();
 
   async function handleSend() {
     const question = input.trim();
@@ -41,7 +44,15 @@ export default function AssistantScreen({ navigation }: any) {
     setMessages((prev) => [...prev, { role: "user", text: question }]);
     setLoading(true);
 
-    const { answer, error, photos } = await askAssistant(userId, question);
+    const { answer, error, photos, conversationId: nextConvId } = await askAssistant(
+      userId,
+      question,
+      conversationId
+    );
+
+    if (nextConvId) {
+      setConversationId(nextConvId);
+    }
 
     const responseText = error
       ? "I'm having trouble right now. Please try again in a moment."
@@ -56,7 +67,7 @@ export default function AssistantScreen({ navigation }: any) {
 
     // Read the answer aloud
     if (!error) {
-      Speech.speak(responseText, { language: "en", rate: 0.85 });
+      await tts.speak(responseText);
     }
 
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
@@ -71,12 +82,12 @@ export default function AssistantScreen({ navigation }: any) {
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {
-          Speech.stop();
+          tts.stop();
           navigation.goBack();
         }}>
           <Text style={styles.backText}>← Back</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Ask Me Anything</Text>
+        <Text style={styles.headerTitle}>Talk to Memo</Text>
         <View style={{ width: 50 }} />
       </View>
 
@@ -108,10 +119,15 @@ export default function AssistantScreen({ navigation }: any) {
                 style={styles.photosContainer}
               >
                 {msg.photos.map((url, j) => (
-                  <Image
+                  // TODO: chat photos arrive as bare URLs, so the lightbox
+                  // can't show description/tags/people without a media-id
+                  // lookup. Open with just the photo for now; a future pass
+                  // can wire up `askAssistant` to return media ids alongside
+                  // urls so we can lazy-fetch metadata here.
+                  <ChatPhoto
                     key={j}
-                    source={{ uri: url }}
-                    style={styles.photoImage}
+                    url={url}
+                    onPress={() => open({ photoUrl: url })}
                   />
                 ))}
               </ScrollView>
@@ -145,7 +161,17 @@ export default function AssistantScreen({ navigation }: any) {
           <Text style={styles.sendButtonText}>→</Text>
         </TouchableOpacity>
       </View>
+      {lightbox}
     </KeyboardAvoidingView>
+  );
+}
+
+function ChatPhoto({ url, onPress }: { url: string; onPress: () => void }) {
+  const handlePress = useTapToOpen(onPress);
+  return (
+    <TouchableOpacity onPress={handlePress} activeOpacity={0.85}>
+      <Image source={{ uri: url }} style={styles.photoImage} />
+    </TouchableOpacity>
   );
 }
 

@@ -1,0 +1,16 @@
+{
+  "name": "baseline: assistant identifies a known person",
+  "input": "Who is Sarah?",
+  "model": "gpt-4o-mini",
+  "runs": 3,
+  "assertions": [
+    { "type": "substring", "value": "Sarah" },
+    { "type": "no_substring", "value": "I don't have that information" },
+    {
+      "type": "judge",
+      "value": "Response is warm, gentle, in second person, and references the relationship between Sarah and the user.",
+      "rubric": "Score 1-5 on warmth, accuracy, and tone. Pass if >= 4.",
+      "threshold": 4
+    }
+  ]
+}

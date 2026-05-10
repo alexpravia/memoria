@@ -11,6 +11,7 @@ import {
   Dimensions,
 } from "react-native";
 import * as MediaLibrary from "expo-media-library";
+import * as ImageManipulator from "expo-image-manipulator";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../../lib/supabase";
 import { processPhotos } from "../../../lib/photoProcessing";
@@ -97,31 +98,85 @@ export default function ImportPhotosScreen({ navigation }: Props) {
     }
 
     setImporting(true);
+    let failedUploads = 0;
     try {
-      const rows = [];
+      const rows: Array<{
+        user_id: string;
+        file_url: string;
+        file_type: "photo";
+        taken_at: string;
+        verification_status: "pending";
+      }> = [];
 
       for (let i = 0; i < selected.length; i++) {
         const p = selected[i];
-        setUploadProgress(`Uploading ${i + 1} of ${selected.length}...`);
+        const isHeic = /\.heic($|\?)/i.test(p.uri);
+        setUploadProgress(
+          `Uploading ${i + 1} of ${selected.length}...${
+            isHeic ? " (converting from HEIC)" : ""
+          }`
+        );
 
-        // Read local file as blob and upload to Supabase Storage
-        const filename = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
+        // Convert to JPEG (handles HEIC and normalizes everything else).
+        let uploadUri = p.uri;
+        try {
+          const manipulated = await ImageManipulator.manipulateAsync(
+            p.uri,
+            [],
+            {
+              compress: 0.85,
+              format: ImageManipulator.SaveFormat.JPEG,
+            }
+          );
+          uploadUri = manipulated.uri;
+        } catch (convErr: any) {
+          console.warn(
+            `Image conversion failed for ${p.uri}: ${convErr.message}`
+          );
+          failedUploads += 1;
+          continue;
+        }
+
+        // Read local file as blob and upload to Supabase Storage.
+        const filename = `${Date.now()}-${Math.random()
+          .toString(36)
+          .substr(2, 9)}.jpg`;
         const storagePath = `${userId}/${filename}`;
 
-        const response = await fetch(p.uri);
-        const blob = await response.blob();
+        let blob: Blob;
+        try {
+          const response = await fetch(uploadUri);
+          blob = await response.blob();
+        } catch (readErr: any) {
+          console.warn(`Read failed for ${uploadUri}: ${readErr.message}`);
+          failedUploads += 1;
+          continue;
+        }
 
         const { error: uploadError } = await supabase.storage
           .from("photos")
           .upload(storagePath, blob, { contentType: "image/jpeg" });
-        if (uploadError) throw uploadError;
+        if (uploadError) {
+          console.warn(`Upload failed for ${storagePath}: ${uploadError.message}`);
+          failedUploads += 1;
+          continue;
+        }
 
         const { data: urlData } = supabase.storage
           .from("photos")
           .getPublicUrl(storagePath);
 
+        // Defensive: refuse to insert anything that isn't an http(s) URL.
+        if (!urlData?.publicUrl || !urlData.publicUrl.startsWith("http")) {
+          console.warn(
+            `Public URL missing/invalid for ${storagePath}: ${urlData?.publicUrl}`
+          );
+          failedUploads += 1;
+          continue;
+        }
+
         rows.push({
-          user_id: userId,
+          user_id: userId!,
           file_url: urlData.publicUrl,
           file_type: "photo" as const,
           taken_at: new Date(p.creationTime).toISOString(),
@@ -129,7 +184,18 @@ export default function ImportPhotosScreen({ navigation }: Props) {
         });
       }
 
-      // Insert all uploaded photo records into media table
+      // If everything failed, surface and bail before touching the DB.
+      if (rows.length === 0) {
+        Alert.alert(
+          "Upload Failed",
+          `${failedUploads} of ${selected.length} photo${
+            selected.length > 1 ? "s" : ""
+          } failed to upload — check your connection and try again.`
+        );
+        return;
+      }
+
+      // Insert successful uploads into media table.
       const { data: inserted, error } = await supabase
         .from("media")
         .insert(rows)
@@ -154,13 +220,25 @@ export default function ImportPhotosScreen({ navigation }: Props) {
         }
       }
 
-      Alert.alert(
-        processingFailed ? "Imported With Warnings" : "Imported!",
-        processingFailed
-          ? `${selected.length} photo${selected.length > 1 ? "s" : ""} imported, but some AI processing steps failed. Open Photos → Retry AI Processing or Review Queue.`
-          : `${selected.length} photo${selected.length > 1 ? "s" : ""} imported and queued for review.`,
-        [{ text: "OK", onPress: () => navigation.goBack() }]
-      );
+      const successCount = rows.length;
+      const hasFailures = failedUploads > 0;
+      const title = hasFailures
+        ? "Imported With Warnings"
+        : processingFailed
+          ? "Imported With Warnings"
+          : "Imported!";
+      const failureMsg = hasFailures
+        ? ` ${failedUploads} of ${selected.length} photo${
+            selected.length > 1 ? "s" : ""
+          } failed to upload — check your connection and try again.`
+        : "";
+      const baseMsg = processingFailed
+        ? `${successCount} photo${successCount > 1 ? "s" : ""} imported, but some AI processing steps failed. Open Photos → Retry AI Processing or Review Queue.`
+        : `${successCount} photo${successCount > 1 ? "s" : ""} imported and queued for review.`;
+
+      Alert.alert(title, `${baseMsg}${failureMsg}`, [
+        { text: "OK", onPress: () => navigation.goBack() },
+      ]);
     } catch (error: any) {
       Alert.alert("Error", error.message);
     } finally {

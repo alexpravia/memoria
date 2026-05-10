@@ -1,0 +1,35 @@
+appId: host.exp.Exponent
+tags:
+  - smoke
+  - local
+  - ios
+
+---
+
+- runFlow:
+    when:
+      visible: "memoria-app"
+    commands:
+      - tapOn: "memoria-app"
+
+- runFlow:
+    when:
+      visible: 'Open in "Expo Go"'
+    commands:
+      - tapOn: "Open"
+
+- extendedWaitUntil:
+    visible:
+      id: "login-screen"
+    timeout: 30000
+
+- assertVisible:
+    id: "login-email-input"
+
+- assertVisible:
+    id: "login-password-input"
+
+- assertVisible:
+    id: "login-submit-button"
+
+- assertVisible: "Welcome back"

@@ -1,0 +1,82 @@
+{
+  "name": "rag-recall: searchMemories surfaces the right memories",
+  "description": "Each case embeds a query and calls searchMemories(userId, query). The test passes if any of the listed expected_ids appears in the top-N results. This file is NOT runnable until a seeded test user with the canonical fixture data exists. See `tests/integration/embeddings.test.ts` for the seeding pattern.",
+  "model": "text-embedding-3-small",
+  "fixture": {
+    "user_alias": "rag-eval-user",
+    "expects_seeded": true,
+    "seed_data_summary": "5 photos (beach, dinner, garden, birthday, hike), 4 people (Sarah daughter, Robert son, Maria neighbor, Bill brother), 5 life facts (taught school, gardens daily, married 1972, retired 2010, loves jazz), 4 events (doctor appt, granddaughter wedding, lunch with Sarah, gardening club)"
+  },
+  "cases": [
+    {
+      "name": "beach query",
+      "query": "What did we do at the beach?",
+      "kind": "media",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:photo:beach"]
+    },
+    {
+      "name": "garden query",
+      "query": "Show me the garden photos",
+      "kind": "media",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:photo:garden"]
+    },
+    {
+      "name": "birthday query",
+      "query": "Tell me about the birthday party",
+      "kind": "media",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:photo:birthday"]
+    },
+    {
+      "name": "family dinner query",
+      "query": "Who was at family dinner?",
+      "kind": "media",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:photo:dinner"]
+    },
+    {
+      "name": "hike query",
+      "query": "Where did we go hiking?",
+      "kind": "media",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:photo:hike"]
+    },
+    {
+      "name": "daughter query",
+      "query": "Tell me about my daughter",
+      "kind": "people",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:person:sarah"]
+    },
+    {
+      "name": "neighbor query",
+      "query": "Who lives next door?",
+      "kind": "people",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:person:maria"]
+    },
+    {
+      "name": "retirement query",
+      "query": "When did I retire?",
+      "kind": "life_facts",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:fact:retired-2010"]
+    },
+    {
+      "name": "marriage query",
+      "query": "When did I get married?",
+      "kind": "life_facts",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:fact:married-1972"]
+    },
+    {
+      "name": "doctor appointment query",
+      "query": "When is my next doctor's appointment?",
+      "kind": "events",
+      "top_n": 3,
+      "expected_ids": ["FIXTURE:event:doctor"]
+    }
+  ]
+}

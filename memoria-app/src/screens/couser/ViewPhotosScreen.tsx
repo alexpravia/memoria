@@ -12,9 +12,10 @@ import {
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
-import { reprocessPendingPhotos } from "../../lib/photoProcessing";
+import { reprocessPendingPhotos, reprocessAllPhotos } from "../../lib/photoProcessing";
 import { useAuth } from "../../context/AuthContext";
 import { VerificationStatus } from "../../types";
+import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -48,7 +49,9 @@ export default function ViewPhotosScreen({ navigation }: Props) {
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
+  const [retagging, setRetagging] = useState(false);
   const [filter, setFilter] = useState<FilterOption>("all");
+  const { open, lightbox } = usePhotoLightbox();
 
   useEffect(() => {
     loadPhotos();
@@ -64,14 +67,49 @@ export default function ViewPhotosScreen({ navigation }: Props) {
 
   async function loadPhotos() {
     if (!userId) return;
+    // Exclude hidden media — once the co-user (or repair script) marks
+    // a photo `hidden`, it should never appear in this gallery again.
     const { data } = await supabase
       .from("media")
       .select("id, file_url, taken_at, verification_status")
       .eq("user_id", userId)
+      .neq("verification_status", "hidden")
       .order("taken_at", { ascending: false });
 
     setPhotos(data || []);
     setLoading(false);
+  }
+
+  async function openPhotoLightbox(photo: PhotoItem) {
+    // Lazy-fetch description, tags, and tagged people only on tap to
+    // avoid loading full metadata for every grid item upfront.
+    const { data: media } = await supabase
+      .from("media")
+      .select("description, ai_tags")
+      .eq("id", photo.id)
+      .single();
+
+    const { data: mp } = await supabase
+      .from("media_people")
+      .select("person_id")
+      .eq("media_id", photo.id);
+
+    let peopleNames: string[] | undefined;
+    if (mp && mp.length > 0) {
+      const ids = mp.map((m: any) => m.person_id);
+      const { data: people } = await supabase
+        .from("people")
+        .select("full_name")
+        .in("id", ids);
+      peopleNames = (people || []).map((p: any) => p.full_name).filter(Boolean);
+    }
+
+    open({
+      photoUrl: photo.file_url,
+      description: media?.description ?? null,
+      tags: media?.ai_tags ?? undefined,
+      peopleNames,
+    });
   }
 
   async function handleRetryPending() {
@@ -84,6 +122,30 @@ export default function ViewPhotosScreen({ navigation }: Props) {
     Alert.alert(
       "Retry Complete",
       `Processed: ${processed}\nStill failing: ${failed}\n\nPending photos will appear in Review Queue for manual approval.`
+    );
+  }
+
+  function confirmRetagAll() {
+    Alert.alert(
+      "Re-tag all photos?",
+      "This resets every photo to pending and re-runs the AI tagger on all of them. This can take several minutes and will use your AI quota. Continue?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Re-tag All", style: "destructive", onPress: handleRetagAll },
+      ]
+    );
+  }
+
+  async function handleRetagAll() {
+    if (!userId || retagging) return;
+    setRetagging(true);
+    const { processed, failed } = await reprocessAllPhotos(userId);
+    setRetagging(false);
+    await loadPhotos();
+
+    Alert.alert(
+      "Re-tag Complete",
+      `Processed: ${processed}\nStill failing: ${failed}`
     );
   }
 
@@ -167,6 +229,22 @@ export default function ViewPhotosScreen({ navigation }: Props) {
         </View>
       )}
 
+      {photos.length > 0 && (
+        <View style={styles.retagWrapper}>
+          <TouchableOpacity
+            style={[styles.retagButton, retagging && styles.retryButtonDisabled]}
+            onPress={confirmRetagAll}
+            disabled={retagging}
+          >
+            {retagging ? (
+              <ActivityIndicator color="#b388ff" size="small" />
+            ) : (
+              <Text style={styles.retagButtonText}>Re-tag All Photos With AI</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
       {filteredPhotos.length === 0 ? (
         <View style={styles.emptyState}>
           <Text style={styles.emptyText}>
@@ -180,17 +258,16 @@ export default function ViewPhotosScreen({ navigation }: Props) {
           numColumns={3}
           contentContainerStyle={styles.grid}
           columnWrapperStyle={styles.row}
-          renderItem={({ item }) => {
-            const badge = getStatusBadge(item.verification_status);
-            return (
-              <View style={styles.photoWrapper}>
-                <Image source={{ uri: item.file_url }} style={styles.photo} />
-                <View style={[styles.statusBadge, { backgroundColor: badge.color }]}>
-                  <Text style={styles.statusBadgeText}>{badge.icon}</Text>
-                </View>
-              </View>
-            );
-          }}
+          renderItem={({ item }) => (
+            <PhotoGridItem
+              item={item}
+              userId={userId}
+              removeFromList={(id) =>
+                setPhotos((prev) => prev.filter((p) => p.id !== id))
+              }
+              onPress={() => openPhotoLightbox(item)}
+            />
+          )}
         />
       )}
 
@@ -207,7 +284,51 @@ export default function ViewPhotosScreen({ navigation }: Props) {
       >
         <Text style={styles.cancelText}>Back to Dashboard</Text>
       </TouchableOpacity>
+      {lightbox}
     </View>
+  );
+}
+
+function PhotoGridItem({
+  item,
+  userId,
+  removeFromList,
+  onPress,
+}: {
+  item: PhotoItem;
+  userId: string | null;
+  removeFromList: (id: string) => void;
+  onPress: () => void;
+}) {
+  const badge = getStatusBadge(item.verification_status);
+  const handlePress = useTapToOpen(onPress);
+  const [broken, setBroken] = useState(false);
+
+  if (broken) return null;
+
+  return (
+    <TouchableOpacity
+      style={styles.photoWrapper}
+      onPress={handlePress}
+      activeOpacity={0.85}
+    >
+      <Image
+        source={{ uri: item.file_url }}
+        style={styles.photo}
+        onError={() => {
+          // Hide this tile from the current render only — do NOT
+          // permanently mark the DB row hidden. Image loads can fail
+          // for transient reasons (network blip, simulator hiccup) and
+          // we don't want to nuke a perfectly good photo on the first
+          // miss. Real `file://` rows are caught earlier by the
+          // `processPhoto` guard and the `repair-broken-photos` script.
+          setBroken(true);
+        }}
+      />
+      <View style={[styles.statusBadge, { backgroundColor: badge.color }]}>
+        <Text style={styles.statusBadgeText}>{badge.icon}</Text>
+      </View>
+    </TouchableOpacity>
   );
 }
 
@@ -306,6 +427,23 @@ const styles = StyleSheet.create({
     borderColor: "#7c4dff",
   },
   reviewQueueText: {
+    color: "#b388ff",
+    fontWeight: "600",
+    fontSize: 13,
+  },
+  retagWrapper: {
+    marginHorizontal: 40,
+    marginBottom: 10,
+  },
+  retagButton: {
+    backgroundColor: "#2a2a4a",
+    borderRadius: 10,
+    paddingVertical: 12,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#7c4dff",
+  },
+  retagButtonText: {
     color: "#b388ff",
     fontWeight: "600",
     fontSize: 13,

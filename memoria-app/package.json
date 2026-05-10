@@ -2,19 +2,25 @@
   "name": "memoria-app",
   "version": "1.0.0",
   "main": "index.ts",
+  "//maestro": "Maestro scripts are PAUSED during AI-native migration (May 2026). Renamed with a leading underscore so they remain visible but inert. See .maestro/README.md.",
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "maestro:check": "sh -c 'export PATH=\"$PATH:$HOME/.maestro/bin\" && maestro --version'",
-    "maestro:studio": "sh -c 'export PATH=\"$PATH:$HOME/.maestro/bin\" && maestro studio'",
-    "maestro:test": "./scripts/maestro-ios.sh .maestro/ios-local-login-screen.yaml",
-    "maestro:test:ios:smoke": "./scripts/maestro-ios.sh .maestro/ios-local-login-screen.yaml",
-    "maestro:test:user:briefing": "sh -c ': \"${MAESTRO_USER_EMAIL:?Set MAESTRO_USER_EMAIL}\" && : \"${MAESTRO_USER_PASSWORD:?Set MAESTRO_USER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/login-to-briefing.yaml -e MAESTRO_USER_EMAIL=\"$MAESTRO_USER_EMAIL\" -e MAESTRO_USER_PASSWORD=\"$MAESTRO_USER_PASSWORD\"'",
-    "maestro:test:user:emergency": "sh -c ': \"${MAESTRO_USER_EMAIL:?Set MAESTRO_USER_EMAIL}\" && : \"${MAESTRO_USER_PASSWORD:?Set MAESTRO_USER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/login-to-emergency-card.yaml -e MAESTRO_USER_EMAIL=\"$MAESTRO_USER_EMAIL\" -e MAESTRO_USER_PASSWORD=\"$MAESTRO_USER_PASSWORD\"'",
-    "maestro:test:co-user": "sh -c ': \"${MAESTRO_COUSER_EMAIL:?Set MAESTRO_COUSER_EMAIL}\" && : \"${MAESTRO_COUSER_PASSWORD:?Set MAESTRO_COUSER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/couser-smoke.yaml -e MAESTRO_COUSER_EMAIL=\"$MAESTRO_COUSER_EMAIL\" -e MAESTRO_COUSER_PASSWORD=\"$MAESTRO_COUSER_PASSWORD\"'",
-    "maestro:test:all": "sh -c 'npm run maestro:test && npm run maestro:test:user:briefing && npm run maestro:test:user:emergency && npm run maestro:test:co-user'"
+    "test": "vitest run src/lib",
+    "test:watch": "vitest src/lib",
+    "test:integration": "vitest run tests/integration",
+    "test:evals": "tsx tests/evals/run.ts",
+    "check": "npx tsc --noEmit && npm test",
+    "_maestro:check": "sh -c 'export PATH=\"$PATH:$HOME/.maestro/bin\" && maestro --version'",
+    "_maestro:studio": "sh -c 'export PATH=\"$PATH:$HOME/.maestro/bin\" && maestro studio'",
+    "_maestro:test": "./scripts/maestro-ios.sh .maestro/ios-local-login-screen.yaml",
+    "_maestro:test:ios:smoke": "./scripts/maestro-ios.sh .maestro/ios-local-login-screen.yaml",
+    "_maestro:test:user:briefing": "sh -c ': \"${MAESTRO_USER_EMAIL:?Set MAESTRO_USER_EMAIL}\" && : \"${MAESTRO_USER_PASSWORD:?Set MAESTRO_USER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/login-to-briefing.yaml -e MAESTRO_USER_EMAIL=\"$MAESTRO_USER_EMAIL\" -e MAESTRO_USER_PASSWORD=\"$MAESTRO_USER_PASSWORD\"'",
+    "_maestro:test:user:emergency": "sh -c ': \"${MAESTRO_USER_EMAIL:?Set MAESTRO_USER_EMAIL}\" && : \"${MAESTRO_USER_PASSWORD:?Set MAESTRO_USER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/login-to-emergency-card.yaml -e MAESTRO_USER_EMAIL=\"$MAESTRO_USER_EMAIL\" -e MAESTRO_USER_PASSWORD=\"$MAESTRO_USER_PASSWORD\"'",
+    "_maestro:test:co-user": "sh -c ': \"${MAESTRO_COUSER_EMAIL:?Set MAESTRO_COUSER_EMAIL}\" && : \"${MAESTRO_COUSER_PASSWORD:?Set MAESTRO_COUSER_PASSWORD}\" && ./scripts/maestro-ios.sh .maestro/couser-smoke.yaml -e MAESTRO_COUSER_EMAIL=\"$MAESTRO_COUSER_EMAIL\" -e MAESTRO_COUSER_PASSWORD=\"$MAESTRO_COUSER_PASSWORD\"'",
+    "_maestro:test:all": "sh -c 'npm run _maestro:test && npm run _maestro:test:user:briefing && npm run _maestro:test:user:emergency && npm run _maestro:test:co-user'"
   },
   "dependencies": {
     "@expo/ngrok": "^4.1.3",
@@ -23,9 +29,10 @@
     "@supabase/supabase-js": "^2.98.0",
     "expo": "~54.0.0",
     "expo-asset": "~12.0.12",
-    "expo-av": "~16.0.8",
+    "expo-audio": "~1.1.1",
     "expo-calendar": "~15.0.8",
     "expo-contacts": "~15.0.11",
+    "expo-image-manipulator": "~14.0.8",
     "expo-image-picker": "~17.0.10",
     "expo-media-library": "~18.2.1",
     "expo-notifications": "^0.32.16",
@@ -38,7 +45,10 @@
   },
   "devDependencies": {
     "@types/react": "~18.3.0",
-    "typescript": "~5.7.0"
+    "@vitest/ui": "^2.1.9",
+    "tsx": "^4.19.2",
+    "typescript": "~5.7.0",
+    "vitest": "^2.1.9"
   },
   "private": true
 }

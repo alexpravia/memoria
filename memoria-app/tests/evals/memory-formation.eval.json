@@ -1,0 +1,80 @@
+{
+  "name": "memory-formation",
+  "description": "Multi-turn conversations asserting appropriate memory formation by the assistant. Schema-correct and runnable when seeded data + creds available. The runner should drive each turn through ask-assistant, then snapshot assistant_memory rows for the test user and assert the expected memories formed (or didn't form).",
+  "cases": [
+    {
+      "name": "user_loves_gardening",
+      "description": "A clear, durable preference should be remembered.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "I spent the whole morning in my garden today, it was wonderful. I love being outside with my tulips."
+        }
+      ],
+      "expected_memories": [
+        { "kind": "preference", "content_substring": "garden" }
+      ]
+    },
+    {
+      "name": "mundane_no_pollution",
+      "description": "Greetings and politeness should NOT pollute memory.",
+      "turns": [
+        { "role": "user", "content": "Hi" },
+        { "role": "user", "content": "Thanks" }
+      ],
+      "expected_memories_count": 0
+    },
+    {
+      "name": "factual_correction_high_importance",
+      "description": "An explicit correction should land as factual_correction with high importance and trigger a flag.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "Actually, my wife's name is Marcia, not Maria. Please remember that."
+        }
+      ],
+      "expected_memories": [
+        {
+          "kind": "factual_correction",
+          "content_substring": "Marcia",
+          "min_importance": 4
+        }
+      ],
+      "expected_flag_queue": true
+    },
+    {
+      "name": "repeated_question_recognised",
+      "description": "When the same question is asked across turns, the assistant should record it as a recurring_question.",
+      "turns": [
+        { "role": "user", "content": "What day is it today?" },
+        { "role": "assistant", "content": "It's Tuesday." },
+        { "role": "user", "content": "What day is it today?" },
+        { "role": "assistant", "content": "Still Tuesday — the same day we just spoke about." },
+        { "role": "user", "content": "What day is it today?" }
+      ],
+      "expected_memories": [
+        {
+          "kind": "recurring_question",
+          "content_substring": "what day is it"
+        }
+      ]
+    },
+    {
+      "name": "passing_emotion_short_lived",
+      "description": "Emotional state should be captured but with a 7-day expiry — short-lived.",
+      "turns": [
+        {
+          "role": "user",
+          "content": "I'm feeling a bit lonely this afternoon. Just been a quiet day."
+        }
+      ],
+      "expected_memories": [
+        {
+          "kind": "emotional_state",
+          "content_substring": "lonely",
+          "max_expiry_days": 7
+        }
+      ]
+    }
+  ]
+}

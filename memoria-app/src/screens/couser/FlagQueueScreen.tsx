@@ -13,6 +13,7 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { FlagItem } from "../../types";
+import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -39,6 +40,7 @@ export default function FlagQueueScreen({ navigation }: Props) {
   const [flags, setFlags] = useState<FlagWithMedia[]>([]);
   const [loading, setLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const { open, lightbox } = usePhotoLightbox();
 
   useEffect(() => {
     loadFlags();
@@ -66,9 +68,28 @@ export default function FlagQueueScreen({ navigation }: Props) {
       return;
     }
 
+    // Filter out flags whose referenced media has been hidden so they
+    // never resurface in the review queue.
+    const mediaFlags = data.filter((f: FlagItem) => f.flag_type === "media");
+    const hiddenMediaIds = new Set<string>();
+    if (mediaFlags.length > 0) {
+      const ids = mediaFlags.map((f: FlagItem) => f.reference_id);
+      const { data: mediaRows } = await supabase
+        .from("media")
+        .select("id, verification_status")
+        .in("id", ids)
+        .eq("verification_status", "hidden");
+      (mediaRows || []).forEach((m: any) => hiddenMediaIds.add(m.id));
+    }
+
+    const visible = data.filter(
+      (f: FlagItem) =>
+        f.flag_type !== "media" || !hiddenMediaIds.has(f.reference_id)
+    );
+
     // Enrich media flags with photo details and tagged people
     const enriched: FlagWithMedia[] = await Promise.all(
-      data.map(async (flag: FlagItem) => {
+      visible.map(async (flag: FlagItem) => {
         if (flag.flag_type !== "media") return flag;
 
         const enrichedFlag: FlagWithMedia = { ...flag };
@@ -208,12 +229,22 @@ export default function FlagQueueScreen({ navigation }: Props) {
   function renderMediaDetails(flag: FlagWithMedia) {
     if (flag.flag_type !== "media" || !flag.media) return null;
 
+    const peopleNames = flag.taggedPeople?.map((tp) => tp.person_name);
     return (
       <View style={styles.mediaSection}>
-        <Image
-          source={{ uri: flag.media.file_url }}
+        <FlagMediaThumb
+          uri={flag.media.file_url}
           style={styles.mediaPreview}
-          resizeMode="cover"
+          mediaId={flag.reference_id}
+          onBroken={loadFlags}
+          onPress={() =>
+            open({
+              photoUrl: flag.media!.file_url,
+              description: flag.media!.description,
+              tags: flag.media!.ai_tags ?? undefined,
+              peopleNames,
+            })
+          }
         />
         {flag.media.description && (
           <View style={styles.aiDetailRow}>
@@ -336,17 +367,65 @@ export default function FlagQueueScreen({ navigation }: Props) {
                 </View>
               </View>
               {flag.flag_type === "media" && flag.media && (
-                <Image
-                  source={{ uri: flag.media.file_url }}
+                <FlagMediaThumb
+                  uri={flag.media.file_url}
                   style={styles.mediaPreviewSmall}
-                  resizeMode="cover"
+                  mediaId={flag.reference_id}
+                  onBroken={loadFlags}
+                  onPress={() =>
+                    open({
+                      photoUrl: flag.media!.file_url,
+                      description: flag.media!.description,
+                      tags: flag.media!.ai_tags ?? undefined,
+                      peopleNames: flag.taggedPeople?.map((tp) => tp.person_name),
+                    })
+                  }
                 />
               )}
             </View>
           ))}
         </>
       )}
+      {lightbox}
     </ScrollView>
+  );
+}
+
+function FlagMediaThumb({
+  uri,
+  style,
+  onPress,
+  mediaId,
+  onBroken,
+}: {
+  uri: string;
+  style: any;
+  onPress: () => void;
+  mediaId: string;
+  onBroken: () => void;
+}) {
+  const handlePress = useTapToOpen(onPress);
+  const [broken, setBroken] = useState(false);
+
+  if (broken) return null;
+
+  return (
+    <TouchableOpacity onPress={handlePress} activeOpacity={0.85}>
+      <Image
+        source={{ uri }}
+        style={style}
+        resizeMode="cover"
+        onError={() => {
+          // Hide this thumbnail from the current render only — do NOT
+          // permanently mark the DB row hidden. Image loads can fail
+          // for transient reasons (network blip, simulator hiccup);
+          // permanent hides would nuke perfectly good photos. Real
+          // `file://` rows are caught by the `processPhoto` guard and
+          // the `repair-broken-photos` script.
+          setBroken(true);
+        }}
+      />
+    </TouchableOpacity>
   );
 }
 

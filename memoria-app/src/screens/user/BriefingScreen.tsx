@@ -8,15 +8,70 @@ import {
   Image,
   Animated,
 } from "react-native";
-import * as Speech from "expo-speech";
+import * as tts from "../../lib/tts";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { SensitivityFilter } from "../../types";
+import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
+import {
+  getTodaysBriefing,
+  resolveSlidePhotos,
+  markDelivered,
+  type BriefingSlide as AIBriefingSlide,
+} from "../../lib/briefing";
 
 interface BriefingSlide {
   text: string;
   subtitle?: string;
   photoUrl?: string;
+  // Optional spoken-text override. Used by the AI path so the model's
+  // warmer `tts_text` is read aloud instead of the on-screen body.
+  ttsOverride?: string;
+}
+
+// Map an AI-generated slide into the legacy renderer shape so the
+// existing animation / navigation pipeline stays untouched. The TTS
+// path picks up `ttsOverride` to read the model's narration verbatim.
+function mapAISlide(s: AIBriefingSlide): BriefingSlide {
+  return {
+    text: s.title,
+    subtitle: s.body,
+    photoUrl: s.photo_url,
+    ttsOverride: s.tts_text,
+  };
+}
+
+// Fill in `photo_url` for slides whose kind suggests a photo
+// (greeting / person / memory_photo) but where the AI omitted one or
+// where it points at a non-http (file://, etc.) URL we cannot render.
+// Pool entries are reused round-robin; if the pool is empty we fall
+// back to the user's profile photo. Non-http URLs are stripped so the
+// renderer can return null cleanly.
+function backfillPhotos(
+  slides: AIBriefingSlide[],
+  pool: string[],
+  userPhoto: string | null
+): AIBriefingSlide[] {
+  const KINDS_WITH_PHOTO = new Set(["greeting", "person", "memory_photo"]);
+  let poolIdx = 0;
+  return slides.map((s) => {
+    let url = s.photo_url;
+    if (url && !url.startsWith("http")) {
+      url = undefined;
+    }
+    if (!url && KINDS_WITH_PHOTO.has(s.kind)) {
+      if (pool.length > 0) {
+        url = pool[poolIdx % pool.length];
+        poolIdx++;
+      } else if (userPhoto && userPhoto.startsWith("http")) {
+        url = userPhoto;
+      }
+    }
+    if (url && !url.startsWith("http")) {
+      url = undefined;
+    }
+    return { ...s, photo_url: url };
+  });
 }
 
 export default function BriefingScreen({ navigation }: any) {
@@ -27,13 +82,84 @@ export default function BriefingScreen({ navigation }: any) {
   const [speaking, setSpeaking] = useState(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const { open: openLightbox, lightbox } = usePhotoLightbox();
+  // Track the AI briefing id so we can mark it `delivered` once the
+  // user finishes the deck.
+  const aiBriefingIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    buildBriefing();
+    loadBriefing();
     return () => {
-      Speech.stop();
+      tts.stop();
     };
   }, []);
+
+  async function loadBriefing() {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+
+    // ── AI path ───────────────────────────────────────────────────
+    // If a co-user-approved (or already-delivered) briefing exists for
+    // today, render it. Otherwise fall back to the procedural builder
+    // so the user is never blocked.
+    try {
+      const ai = await getTodaysBriefing(userId);
+      if (ai && ai.slides && ai.slides.length > 0) {
+        const resolved = await resolveSlidePhotos(ai.slides);
+
+        // Build a pool of verified, http-prefixed photo URLs to fill
+        // slides whose kind implies a photo but where the AI didn't
+        // include one. Start from URLs already present on the resolved
+        // slides, then top up from recent verified media if needed.
+        const verifiedPool: string[] = [];
+        for (const s of resolved) {
+          const u = s.photo_url;
+          if (u && u.startsWith("http") && !verifiedPool.includes(u)) {
+            verifiedPool.push(u);
+          }
+        }
+        if (verifiedPool.length < 3) {
+          const { data: extra } = await supabase
+            .from("media")
+            .select("file_url")
+            .eq("user_id", userId)
+            .eq("verification_status", "verified")
+            .not("description", "is", null)
+            .order("taken_at", { ascending: false })
+            .limit(5);
+          for (const row of (extra as Array<{ file_url: string }> | null) ?? []) {
+            const u = row.file_url;
+            if (u && u.startsWith("http") && !verifiedPool.includes(u)) {
+              verifiedPool.push(u);
+            }
+          }
+        }
+
+        // Fetch the user's profile photo as a last-resort fallback.
+        const { data: userRow } = await supabase
+          .from("users")
+          .select("photo_url")
+          .eq("id", userId)
+          .single();
+        const userPhoto =
+          (userRow?.photo_url as string | undefined | null) ?? null;
+
+        const patched = backfillPhotos(resolved, verifiedPool, userPhoto);
+        const mapped = patched.map(mapAISlide);
+        aiBriefingIdRef.current = ai.id;
+        setSlides(mapped);
+        setLoading(false);
+        return;
+      }
+    } catch (err) {
+      console.warn("BriefingScreen: AI path threw, falling back:", err);
+    }
+
+    // ── Fallback (procedural) ─────────────────────────────────────
+    await buildBriefing();
+  }
 
   useEffect(() => {
     if (slides.length > 0 && currentSlide < slides.length) {
@@ -60,7 +186,15 @@ export default function BriefingScreen({ navigation }: any) {
   }
 
   function handleExit() {
-    Speech.stop();
+    tts.stop();
+    // If the user exits an AI briefing partway through, still mark it
+    // delivered so it doesn't keep re-appearing tomorrow as
+    // "approved-not-yet-delivered".
+    const id = aiBriefingIdRef.current;
+    if (id) {
+      markDelivered(id);
+      aiBriefingIdRef.current = null;
+    }
     navigation.goBack();
   }
 
@@ -355,32 +489,48 @@ export default function BriefingScreen({ navigation }: any) {
     setLoading(false);
   }
 
-  function speakSlide(slide: BriefingSlide) {
-    Speech.stop();
-    const fullText = slide.subtitle
+  async function speakSlide(slide: BriefingSlide) {
+    const fullText = slide.ttsOverride
+      ? slide.ttsOverride
+      : slide.subtitle
       ? `${slide.text}. ${slide.subtitle}`
       : slide.text;
 
     setSpeaking(true);
-    Speech.speak(fullText, {
-      language: "en",
-      rate: 0.85,
+    await tts.speak(fullText, {
       onDone: () => setSpeaking(false),
-      onStopped: () => setSpeaking(false),
     });
+
+    // Pre-warm the next slide's audio so navigation feels instant.
+    const next = slides[currentSlide + 1];
+    if (next) {
+      const nextText = next.ttsOverride
+        ? next.ttsOverride
+        : next.subtitle
+        ? `${next.text}. ${next.subtitle}`
+        : next.text;
+      tts.prewarm(nextText);
+    }
   }
 
   function nextSlide() {
-    Speech.stop();
+    tts.stop();
     if (currentSlide < slides.length - 1) {
       setCurrentSlide(currentSlide + 1);
     } else {
+      // Final slide → mark the AI briefing delivered (no-op if we're
+      // on the procedural fallback path).
+      const id = aiBriefingIdRef.current;
+      if (id) {
+        markDelivered(id);
+        aiBriefingIdRef.current = null;
+      }
       navigation.goBack();
     }
   }
 
   function prevSlide() {
-    Speech.stop();
+    tts.stop();
     if (currentSlide > 0) {
       setCurrentSlide(currentSlide - 1);
     }
@@ -437,7 +587,11 @@ export default function BriefingScreen({ navigation }: any) {
       <View testID="briefing-slide-content" style={styles.slideContent}>
         <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
           {slide.photoUrl && (
-            <Image source={{ uri: slide.photoUrl }} style={styles.photo} />
+            <BriefingPhoto
+              uri={slide.photoUrl}
+              style={styles.photo}
+              onTap={() => openLightbox({ photoUrl: slide.photoUrl! })}
+            />
           )}
           <Text testID="briefing-slide-text" style={styles.mainText}>{slide.text}</Text>
           {slide.subtitle && (
@@ -467,7 +621,29 @@ export default function BriefingScreen({ navigation }: any) {
           </Text>
         </TouchableOpacity>
       </View>
+      {lightbox}
     </View>
+  );
+}
+
+function BriefingPhoto({
+  uri,
+  style,
+  onTap,
+}: {
+  uri: string;
+  style: any;
+  onTap: () => void;
+}) {
+  const handlePress = useTapToOpen(onTap);
+  const [broken, setBroken] = useState(false);
+  if (broken || !uri || !uri.startsWith("http")) {
+    return null;
+  }
+  return (
+    <TouchableOpacity onPress={handlePress} activeOpacity={0.85}>
+      <Image source={{ uri }} style={style} onError={() => setBroken(true)} />
+    </TouchableOpacity>
   );
 }
 
@@ -504,12 +680,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   photo: {
-    width: 150,
-    height: 150,
-    borderRadius: 75,
+    width: "100%",
+    aspectRatio: 4 / 3,
+    borderRadius: 16,
     marginBottom: 24,
-    borderWidth: 3,
-    borderColor: "#7c4dff",
+    backgroundColor: "#000",
   },
   mainText: {
     fontSize: 32,

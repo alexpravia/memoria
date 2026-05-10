@@ -1,0 +1,231 @@
+{
+  "_comment": "Briefing-quality eval (Phase E). Five seeded personas exercise the pacing-and-tone behaviors the AI briefing must show: opening soft when memories suggest anxiety, leading with a difficult appointment warmly, leaning into a happy upcoming visit, honoring grief without re-traumatizing, and grounding a routine day. Each case ships the inputs the Edge Function would gather, the expected candidate photo pool, and a mix of HARD assertions (slide count, photo_ids, tts_text constraints) and JUDGE assertions (warm tone, leads with grounding content, ends with reassurance). Schema-valid and ready for tests/evals/run.ts to execute once the runner picks up briefing cases.",
+  "name": "briefing-quality",
+  "description": "End-to-end quality bar for AI-generated morning briefings. Hard checks block CI; judge checks score qualitative behavior.",
+  "model": "gpt-4o-mini",
+  "runs": 3,
+  "schema_version": 1,
+  "cases": [
+    {
+      "name": "anxious-recent-memories",
+      "persona": "Margaret, 78, anxious lately about forgetting people's names. Recent assistant memories show she has been worried about her grandson visiting and not recognizing him.",
+      "inputs": {
+        "date": "2026-05-10",
+        "profile": {
+          "full_name": "Margaret",
+          "location": "Portland, Oregon",
+          "cognitive_level": 3
+        },
+        "facts": [
+          { "fact": "You raised three children in this house." },
+          { "fact": "You taught second grade for thirty-two years." }
+        ],
+        "people": [
+          { "id": "p-husband", "full_name": "Frank", "relationship": "husband", "key_facts": ["Married 54 years"] },
+          { "id": "p-grandson", "full_name": "Eli", "relationship": "grandson", "key_facts": ["Just turned 19", "Studies music"] }
+        ],
+        "events": [],
+        "memories": [
+          { "kind": "emotional_state", "content": "Margaret seemed anxious yesterday morning.", "importance": 4 },
+          { "kind": "recurring_question", "content": "Is Eli coming to visit?", "importance": 3 }
+        ],
+        "pinned_notes": [
+          { "content": "Eli loves the chocolate cookies." }
+        ],
+        "photos": [
+          { "id": "ph-garden", "description": "You in the garden last spring, smiling at a tulip." },
+          { "id": "ph-frank", "description": "You and Frank on the porch, holding hands." },
+          { "id": "ph-eli", "description": "Eli at his high-school recital, holding his guitar." }
+        ]
+      },
+      "expected": {
+        "candidate_photo_ids": ["ph-garden", "ph-frank", "ph-eli"],
+        "hard_assertions": [
+          { "type": "slide_count", "min": 6, "max": 12 },
+          { "type": "photo_ids_in_pool" },
+          { "type": "no_url_in_tts" },
+          { "type": "no_uuid_in_tts" }
+        ],
+        "judge_assertions": [
+          { "type": "warm_tone" },
+          { "type": "opens_softly_when_anxiety_is_present" },
+          { "type": "ends_with_reassurance" },
+          { "type": "mentions_grandson_eli_warmly" }
+        ]
+      }
+    },
+    {
+      "name": "difficult-appointment-today",
+      "persona": "Robert, 81, has a doctor's appointment today about test results. Routine but he often dreads waiting rooms.",
+      "inputs": {
+        "date": "2026-05-10",
+        "profile": {
+          "full_name": "Robert",
+          "location": "Albany, New York",
+          "cognitive_level": 3
+        },
+        "facts": [
+          { "fact": "You served in the Navy." },
+          { "fact": "You love cribbage." }
+        ],
+        "people": [
+          { "id": "p-wife", "full_name": "Helen", "relationship": "wife", "key_facts": ["Will drive you today"] }
+        ],
+        "events": [
+          { "title": "Doctor's appointment", "description": "Follow-up at 11am with Dr. Park.", "event_date": "2026-05-10T11:00:00Z" }
+        ],
+        "memories": [
+          { "kind": "preference", "content": "Robert likes Helen to come along to medical things.", "importance": 3 }
+        ],
+        "pinned_notes": [],
+        "photos": [
+          { "id": "ph-helen", "description": "Helen laughing at the kitchen table over coffee." },
+          { "id": "ph-cribbage", "description": "Your worn cribbage board, mid-game." }
+        ]
+      },
+      "expected": {
+        "candidate_photo_ids": ["ph-helen", "ph-cribbage"],
+        "hard_assertions": [
+          { "type": "slide_count", "min": 6, "max": 12 },
+          { "type": "photo_ids_in_pool" },
+          { "type": "no_url_in_tts" }
+        ],
+        "judge_assertions": [
+          { "type": "warm_tone" },
+          { "type": "leads_with_or_grounds_appointment_warmly" },
+          { "type": "mentions_helen_will_drive" },
+          { "type": "ends_with_reassurance" }
+        ]
+      }
+    },
+    {
+      "name": "looking-forward-family-visit",
+      "persona": "Helen, 76, daughter Sarah is flying in tomorrow with two grandchildren. She's been excited for weeks.",
+      "inputs": {
+        "date": "2026-05-10",
+        "profile": {
+          "full_name": "Helen",
+          "location": "Asheville, North Carolina",
+          "cognitive_level": 4
+        },
+        "facts": [
+          { "fact": "You make the family's pecan pie every Thanksgiving." }
+        ],
+        "people": [
+          { "id": "p-sarah", "full_name": "Sarah", "relationship": "daughter", "key_facts": ["Lives in Seattle"] },
+          { "id": "p-emma", "full_name": "Emma", "relationship": "granddaughter", "key_facts": ["Age 8", "Loves horses"] },
+          { "id": "p-noah", "full_name": "Noah", "relationship": "grandson", "key_facts": ["Age 5", "Loves trains"] }
+        ],
+        "events": [
+          { "title": "Sarah & kids arrive tomorrow", "description": "Pickup at airport at 4pm.", "event_date": "2026-05-11T16:00:00Z" }
+        ],
+        "memories": [
+          { "kind": "emotional_state", "content": "Helen has been excited about Sarah's visit.", "importance": 4 }
+        ],
+        "pinned_notes": [
+          { "content": "Bake the pecan pie before Sarah arrives." }
+        ],
+        "photos": [
+          { "id": "ph-sarah", "description": "Sarah on her wedding day, you beside her." },
+          { "id": "ph-emma-noah", "description": "Emma and Noah playing in the backyard last summer." },
+          { "id": "ph-pie", "description": "Your famous pecan pie cooling on the windowsill." }
+        ]
+      },
+      "expected": {
+        "candidate_photo_ids": ["ph-sarah", "ph-emma-noah", "ph-pie"],
+        "hard_assertions": [
+          { "type": "slide_count", "min": 6, "max": 12 },
+          { "type": "photo_ids_in_pool" },
+          { "type": "no_url_in_tts" }
+        ],
+        "judge_assertions": [
+          { "type": "warm_tone" },
+          { "type": "celebrates_upcoming_visit" },
+          { "type": "names_grandchildren_emma_and_noah" },
+          { "type": "ends_with_reassurance" }
+        ]
+      }
+    },
+    {
+      "name": "grieving-recent-loss",
+      "persona": "Tom, 84, lost his brother Bill three months ago. The co-user has set a sensitivity rule: 'don't bring up Bill's death directly, but it's okay to mention Bill warmly in old memories.'",
+      "inputs": {
+        "date": "2026-05-10",
+        "profile": {
+          "full_name": "Tom",
+          "location": "Galveston, Texas",
+          "cognitive_level": 3
+        },
+        "facts": [
+          { "fact": "You and your brother Bill ran a fishing boat together for 40 years." }
+        ],
+        "people": [
+          { "id": "p-bill", "full_name": "Bill", "relationship": "brother", "key_facts": ["Older brother", "Best friend"] },
+          { "id": "p-mary", "full_name": "Mary", "relationship": "wife" }
+        ],
+        "events": [],
+        "memories": [
+          { "kind": "emotional_state", "content": "Tom has been quieter since the loss. Tender, not crying." }
+        ],
+        "pinned_notes": [],
+        "photos": [
+          { "id": "ph-boat", "description": "You and Bill on the boat in 1988, both grinning, big tarpon between you." },
+          { "id": "ph-mary", "description": "Mary on the dock at sunset." }
+        ]
+      },
+      "expected": {
+        "candidate_photo_ids": ["ph-boat", "ph-mary"],
+        "hard_assertions": [
+          { "type": "slide_count", "min": 6, "max": 12 },
+          { "type": "photo_ids_in_pool" },
+          { "type": "no_url_in_tts" }
+        ],
+        "judge_assertions": [
+          { "type": "warm_tone" },
+          { "type": "honors_grief_without_naming_death" },
+          { "type": "mentions_bill_warmly_in_memory" },
+          { "type": "ends_with_reassurance" }
+        ]
+      }
+    },
+    {
+      "name": "routine-quiet-day",
+      "persona": "Eleanor, 79, no events today, no recent emotional memories, just a calm day at home. Briefing should be short and grounding.",
+      "inputs": {
+        "date": "2026-05-10",
+        "profile": {
+          "full_name": "Eleanor",
+          "location": "Madison, Wisconsin",
+          "cognitive_level": 3
+        },
+        "facts": [
+          { "fact": "You retired from nursing in 2010." },
+          { "fact": "You volunteer at the library on Wednesdays." }
+        ],
+        "people": [
+          { "id": "p-arthur", "full_name": "Arthur", "relationship": "husband" }
+        ],
+        "events": [],
+        "memories": [],
+        "pinned_notes": [],
+        "photos": [
+          { "id": "ph-library", "description": "The Madison library reading room where you volunteer." },
+          { "id": "ph-arthur", "description": "Arthur reading the newspaper at the kitchen table." }
+        ]
+      },
+      "expected": {
+        "candidate_photo_ids": ["ph-library", "ph-arthur"],
+        "hard_assertions": [
+          { "type": "slide_count", "min": 6, "max": 12 },
+          { "type": "photo_ids_in_pool" },
+          { "type": "no_url_in_tts" }
+        ],
+        "judge_assertions": [
+          { "type": "warm_tone" },
+          { "type": "grounds_user_in_day_and_place" },
+          { "type": "ends_with_reassurance" }
+        ]
+      }
+    }
+  ]
+}

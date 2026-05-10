@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { embedAndStore } from "./embeddings";
 
 interface ProcessedPhoto {
   mediaId: string;
@@ -44,6 +45,24 @@ export async function processPhoto(
   photoUrl: string,
   userId: string
 ): Promise<ProcessedPhoto | null> {
+  // Guard: refuse to send non-http URLs to the vision API. Hide the
+  // row instead so it disappears from gallery + flag queue.
+  if (!photoUrl || typeof photoUrl !== "string" || !photoUrl.toLowerCase().startsWith("http")) {
+    console.warn(`processPhoto: skipping ${mediaId}, non-http file_url: ${photoUrl}`);
+    await supabase
+      .from("media")
+      .update({ verification_status: "hidden" })
+      .eq("id", mediaId);
+    // Best-effort: clear pending flag rows for this media id.
+    await supabase
+      .from("flag_queue")
+      .delete()
+      .eq("flag_type", "media")
+      .eq("reference_id", mediaId)
+      .eq("status", "pending");
+    return null;
+  }
+
   // Fetch user's people list for face matching context
   const { data: peopleData } = await supabase
     .from("people")
@@ -86,12 +105,21 @@ export async function processPhoto(
     typeof data === "string" ? JSON.parse(data) : data;
   result.mediaId = mediaId;
 
-  // Update media row with description and tags
-  const allHighConfidence =
-    result.people_identified.length > 0 &&
+  // Update media row with description and tags.
+  //
+  // Auto-verify a photo when:
+  //   - the model didn't flag it for review, AND
+  //   - any people it claims to identify are all high-confidence.
+  //
+  // Photos with NO people (landscapes, scenery, objects, pets) auto-verify
+  // as long as `needs_review === false`. Previously these were stuck at
+  // pending because the old check required `people_identified.length > 0`,
+  // which sent every people-less photo to the review queue.
+  const peopleAreOk =
+    result.people_identified.length === 0 ||
     result.people_identified.every((p) => p.confidence === "high");
   const verificationStatus =
-    allHighConfidence && !result.needs_review ? "verified" : "pending";
+    peopleAreOk && !result.needs_review ? "verified" : "pending";
 
   const { error: mediaUpdateError } = await supabase
     .from("media")
@@ -106,6 +134,12 @@ export async function processPhoto(
     console.warn(`Failed to update media ${mediaId}:`, mediaUpdateError.message);
     await upsertPendingFlag(mediaId, userId, `Could not update analyzed photo metadata: ${mediaUpdateError.message}`);
     return result;
+  }
+
+  // Fire-and-forget: embed the AI description so this photo is searchable.
+  // Failures here MUST NOT regress the photo pipeline reliability hardening.
+  if (result.description) {
+    void embedAndStore("media", mediaId, result.description);
   }
 
   // Link identified people via media_people junction table
@@ -178,5 +212,50 @@ export async function reprocessPendingPhotos(userId: string): Promise<{ processe
     }
   }
 
+  return { processed, failed };
+}
+
+export async function reprocessAllPhotos(userId: string): Promise<{ processed: number; failed: number }> {
+  // Pick every non-hidden photo with an http URL. Reset to pending
+  // and clear stale AI metadata so the new vision prompt gets to
+  // tag from scratch.
+  const { data: photos, error } = await supabase
+    .from("media")
+    .select("id, file_url")
+    .eq("user_id", userId)
+    .eq("file_type", "photo")
+    .neq("verification_status", "hidden")
+    .ilike("file_url", "http%");
+
+  if (error || !photos) {
+    return { processed: 0, failed: 0 };
+  }
+
+  // Bulk reset (one update per row to keep RLS tight; could be a
+  // single .in() update too if RLS allows it). Use .in() to do this
+  // in a single round trip:
+  if (photos.length > 0) {
+    const ids = photos.map((p) => p.id);
+    await supabase
+      .from("media")
+      .update({
+        verification_status: "pending",
+        ai_tags: null,
+        description: null,
+      })
+      .in("id", ids);
+  }
+
+  let processed = 0;
+  let failed = 0;
+  for (const media of photos) {
+    try {
+      const result = await processPhoto(media.id, media.file_url, userId);
+      if (result) processed += 1;
+      else failed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
   return { processed, failed };
 }

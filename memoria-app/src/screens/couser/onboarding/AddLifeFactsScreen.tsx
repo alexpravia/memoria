@@ -12,6 +12,7 @@ import {
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
 import { supabase } from "../../../lib/supabase";
+import { embedAndStore } from "../../../lib/embeddings";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -48,8 +49,16 @@ export default function AddLifeFactsScreen({ navigation, route }: Props) {
         display_order: i,
       }));
 
-      const { error } = await supabase.from("life_facts").insert(rows);
+      const { data: inserted, error } = await supabase
+        .from("life_facts")
+        .insert(rows)
+        .select("id, fact");
       if (error) throw error;
+
+      // Fire-and-forget: embed each new fact. Failures must NOT block the user.
+      (inserted || []).forEach((row: { id: string; fact: string }) => {
+        void embedAndStore("life_facts", row.id, row.fact);
+      });
 
       navigation.navigate("AddPeople", { userId });
     } catch (error: any) {

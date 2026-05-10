@@ -11,6 +11,7 @@ import {
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
 import { supabase } from "../../../lib/supabase";
+import { embedAndStore } from "../../../lib/embeddings";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -66,8 +67,17 @@ export default function AddEventsScreen({ navigation, route }: Props) {
           event_type: e.event_type,
         }));
 
-        const { error } = await supabase.from("events").insert(rows);
+        const { data: inserted, error } = await supabase
+          .from("events")
+          .insert(rows)
+          .select("id, title, description");
         if (error) throw error;
+
+        // Fire-and-forget: embed each new event. Failures must NOT block the user.
+        (inserted || []).forEach((row: { id: string; title: string; description: string | null }) => {
+          const text = `${row.title} ${row.description ?? ""}`.trim();
+          void embedAndStore("events", row.id, text);
+        });
       }
 
       navigation.navigate("CoUserHome");

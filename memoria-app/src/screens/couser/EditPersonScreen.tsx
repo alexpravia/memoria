@@ -12,6 +12,7 @@ import {
 import { RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
+import { embedAndStore } from "../../lib/embeddings";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -107,6 +108,18 @@ export default function EditPersonScreen({ navigation, route }: Props) {
       Alert.alert("Error", error.message || "Failed to save changes.");
       return;
     }
+
+    // Fire-and-forget: re-embed the updated person. Must NOT block the save.
+    const embedText = [
+      fullName.trim(),
+      relationship.trim(),
+      keyFacts.join(" "),
+      emotionalNotes.trim(),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+    void embedAndStore("people", personId, embedText);
 
     navigation.goBack();
   }

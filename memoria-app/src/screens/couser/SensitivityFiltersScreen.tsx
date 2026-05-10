@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
+import { embedAndStore } from "../../lib/embeddings";
 import { useAuth } from "../../context/AuthContext";
 import { SensitivityFilter, Person } from "../../types";
 
@@ -18,7 +19,7 @@ type Props = {
   navigation: NativeStackNavigationProp<any>;
 };
 
-type FilterType = "person" | "topic" | "time_period";
+type FilterType = "person" | "topic" | "time_period" | "intent";
 
 export default function SensitivityFiltersScreen({ navigation }: Props) {
   const { userId, coUserId } = useAuth();
@@ -34,6 +35,7 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [intentText, setIntentText] = useState("");
 
   useEffect(() => {
     loadData();
@@ -78,6 +80,14 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
       return;
     }
 
+    if (filterType === "intent" && !intentText.trim()) {
+      Alert.alert(
+        "Describe the rule",
+        "Write what to avoid in plain language (e.g., 'anything about Mom's death')."
+      );
+      return;
+    }
+
     let value = filterValue.trim();
     if (filterType === "person") {
       const person = people.find((p) => p.id === selectedPersonId);
@@ -86,21 +96,43 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
     if (filterType === "time_period") {
       value = `${startDate.trim()} to ${endDate.trim()}`;
     }
+    if (filterType === "intent") {
+      value = intentText.trim();
+    }
 
-    const { error } = await supabase.from("sensitivity_filters").insert({
-      user_id: userId,
-      filter_type: filterType,
-      filter_value: value,
-      person_id: filterType === "person" ? selectedPersonId : null,
-      start_date: filterType === "time_period" ? startDate.trim() : null,
-      end_date: filterType === "time_period" ? endDate.trim() : null,
-      notes: notes.trim() || null,
-      created_by: coUserId,
-    });
+    const { data: inserted, error } = await supabase
+      .from("sensitivity_filters")
+      .insert({
+        user_id: userId,
+        filter_type: filterType,
+        filter_value: value,
+        person_id: filterType === "person" ? selectedPersonId : null,
+        start_date: filterType === "time_period" ? startDate.trim() : null,
+        end_date: filterType === "time_period" ? endDate.trim() : null,
+        notes: notes.trim() || null,
+        created_by: coUserId,
+        intent_text: filterType === "intent" ? intentText.trim() : null,
+      })
+      .select("id")
+      .single();
 
     if (error) {
       Alert.alert("Error", error.message);
       return;
+    }
+
+    // Fire-and-forget: embed the intent text so future semantic lookups
+    // can use it. We intentionally don't await so the save flow stays
+    // snappy even if the embed function is slow or fails.
+    if (filterType === "intent" && inserted?.id) {
+      embedAndStore(
+        // `sensitivity_filters` is not in the EmbeddingKind union, so cast.
+        "sensitivity_filters" as any,
+        inserted.id as string,
+        intentText.trim()
+      ).catch(() => {
+        /* intentionally swallowed — embed failures must not break save */
+      });
     }
 
     // Reset form and reload
@@ -110,6 +142,7 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
     setStartDate("");
     setEndDate("");
     setNotes("");
+    setIntentText("");
     loadData();
   }
 
@@ -135,6 +168,8 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
         return "🚫";
       case "time_period":
         return "📅";
+      case "intent":
+        return "💬";
     }
   }
 
@@ -146,6 +181,8 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
         return "Topic";
       case "time_period":
         return "Time Period";
+      case "intent":
+        return "Free-text";
     }
   }
 
@@ -173,21 +210,31 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
         <Text style={styles.emptyText}>No filters set yet. Tap below to add one.</Text>
       )}
 
-      {filters.map((filter) => (
-        <View key={filter.id} style={styles.filterCard}>
-          <View style={styles.filterHeader}>
-            <Text style={styles.filterIcon}>{getFilterIcon(filter.filter_type as FilterType)}</Text>
-            <View style={styles.filterInfo}>
-              <Text style={styles.filterType}>{getFilterLabel(filter.filter_type as FilterType)}</Text>
-              <Text style={styles.filterValue}>{filter.filter_value}</Text>
-              {filter.notes && <Text style={styles.filterNotes}>{filter.notes}</Text>}
+      {filters.map((filter) => {
+        const ftype = filter.filter_type as FilterType;
+        const isIntent = ftype === "intent";
+        const intentText = (filter as any).intent_text as string | null | undefined;
+        const displayValue = isIntent
+          ? intentText || filter.filter_value
+          : filter.filter_value;
+        return (
+          <View key={filter.id} style={styles.filterCard}>
+            <View style={styles.filterHeader}>
+              <Text style={styles.filterIcon}>{getFilterIcon(ftype)}</Text>
+              <View style={styles.filterInfo}>
+                <Text style={styles.filterType}>{getFilterLabel(ftype)}</Text>
+                <Text style={[styles.filterValue, isIntent && styles.intentValue]}>
+                  {isIntent ? `Intent: ${displayValue}` : displayValue}
+                </Text>
+                {filter.notes && <Text style={styles.filterNotes}>{filter.notes}</Text>}
+              </View>
             </View>
+            <TouchableOpacity onPress={() => deleteFilter(filter.id)}>
+              <Text style={styles.deleteText}>✕</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity onPress={() => deleteFilter(filter.id)}>
-            <Text style={styles.deleteText}>✕</Text>
-          </TouchableOpacity>
-        </View>
-      ))}
+        );
+      })}
 
       {/* Add filter form */}
       {adding ? (
@@ -196,7 +243,7 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
 
           {/* Type selector */}
           <View style={styles.typeRow}>
-            {(["topic", "person", "time_period"] as FilterType[]).map((type) => (
+            {(["topic", "person", "time_period", "intent"] as FilterType[]).map((type) => (
               <TouchableOpacity
                 key={type}
                 style={[styles.typeButton, filterType === type && styles.typeButtonActive]}
@@ -206,6 +253,7 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
                   setSelectedPersonId(null);
                   setStartDate("");
                   setEndDate("");
+                  setIntentText("");
                 }}
               >
                 <Text style={[styles.typeButtonText, filterType === type && styles.typeButtonTextActive]}>
@@ -268,6 +316,17 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
             </View>
           )}
 
+          {filterType === "intent" && (
+            <TextInput
+              style={[styles.input, styles.intentInput]}
+              placeholder="Describe what to avoid (e.g., 'anything about Mom's death' or 'don't bring up the hospital')."
+              placeholderTextColor="#666"
+              value={intentText}
+              onChangeText={setIntentText}
+              multiline
+            />
+          )}
+
           {/* Notes */}
           <TextInput
             style={[styles.input, styles.notesInput]}
@@ -289,6 +348,7 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
                 setStartDate("");
                 setEndDate("");
                 setNotes("");
+                setIntentText("");
               }}
             >
               <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -437,6 +497,13 @@ const styles = StyleSheet.create({
   notesInput: {
     minHeight: 60,
     textAlignVertical: "top",
+  },
+  intentInput: {
+    minHeight: 80,
+    textAlignVertical: "top",
+  },
+  intentValue: {
+    fontStyle: "italic",
   },
   personOption: {
     backgroundColor: "#1a1a2e",

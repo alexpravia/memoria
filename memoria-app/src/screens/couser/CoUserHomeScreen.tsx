@@ -30,6 +30,8 @@ const automationIds = {
   reviewQueueButton: "co-user-home-review-queue",
   pendingFlagsBadge: "co-user-home-pending-flags-badge",
   sensitivityFiltersButton: "co-user-home-sensitivity-filters",
+  aiMemoryButton: "co-user-home-ai-memory",
+  briefingPreviewButton: "co-user-home-briefing-preview",
   setupUserLoginButton: "co-user-home-setup-user-login",
   emergencyContactSettingsButton: "co-user-home-emergency-contact-settings",
   signOutButton: "co-user-home-sign-out",
@@ -272,6 +274,28 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityHint="Opens the sensitivity filters screen"
       >
         <Text style={styles.actionButtonText}>🛡️ Sensitivity Filters</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.safetyButton}
+        onPress={() => navigation.navigate("AIMemory")}
+        testID={automationIds.aiMemoryButton}
+        accessibilityRole="button"
+        accessibilityLabel="Memo's Notes"
+        accessibilityHint="Opens what Memo remembers about your loved one"
+      >
+        <Text style={styles.actionButtonText}>🧠 Memo's Notes</Text>
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        style={styles.safetyButton}
+        onPress={() => navigation.navigate("BriefingPreview")}
+        testID={automationIds.briefingPreviewButton}
+        accessibilityRole="button"
+        accessibilityLabel="Tomorrow's briefing"
+        accessibilityHint="Generate, review, and approve tomorrow's morning briefing"
+      >
+        <Text style={styles.actionButtonText}>📅 Tomorrow's Briefing</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
