@@ -1,0 +1,11 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "@memoria/core": ["../../packages/core/src/index.ts"],
+      "@memoria/core/*": ["../../packages/core/src/*"]
+    }
+  },
+  "exclude": ["supabase/functions"]
+}

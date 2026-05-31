@@ -1,0 +1,15 @@
+{
+  "name": "memoria",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspace=packages/core",
+    "check": "npm run typecheck --workspace=apps/mobile && npm run test --workspace=packages/core"
+  },
+  "devDependencies": {
+    "@types/react": "~18.3.0"
+  }
+}
