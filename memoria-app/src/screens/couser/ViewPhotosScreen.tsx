@@ -16,6 +16,7 @@ import { reprocessPendingPhotos, reprocessAllPhotos } from "../../lib/photoProce
 import { useAuth } from "../../context/AuthContext";
 import { VerificationStatus } from "../../types";
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
+import Icon, { IconName } from "../../components/Icon";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -33,14 +34,14 @@ type FilterOption = "all" | "pending" | "verified";
 const SCREEN_WIDTH = Dimensions.get("window").width;
 const PHOTO_SIZE = (SCREEN_WIDTH - 80 - 16) / 3;
 
-function getStatusBadge(status: VerificationStatus) {
+function getStatusBadge(status: VerificationStatus): { name: IconName; color: string } {
   switch (status) {
     case "verified":
-      return { icon: "✓", color: "#1b5e20" };
+      return { name: "check", color: "#1b5e20" };
     case "pending":
-      return { icon: "⏳", color: "#ffab40" };
+      return { name: "pending", color: "#ffab40" };
     case "hidden":
-      return { icon: "🚫", color: "#b71c1c" };
+      return { name: "block", color: "#b71c1c" };
   }
 }
 
@@ -193,16 +194,18 @@ export default function ViewPhotosScreen({ navigation }: Props) {
           style={[styles.filterButton, filter === "pending" && styles.filterButtonActive]}
           onPress={() => setFilter("pending")}
         >
+          <Icon name="pending" size={14} color={filter === "pending" ? "#ffffff" : "#888"} />
           <Text style={[styles.filterText, filter === "pending" && styles.filterTextActive]}>
-            ⏳ Pending ({pendingCount})
+            Pending ({pendingCount})
           </Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.filterButton, filter === "verified" && styles.filterButtonActive]}
           onPress={() => setFilter("verified")}
         >
+          <Icon name="check" size={14} color={filter === "verified" ? "#ffffff" : "#888"} />
           <Text style={[styles.filterText, filter === "verified" && styles.filterTextActive]}>
-            ✓ Verified ({verifiedCount})
+            Verified ({verifiedCount})
           </Text>
         </TouchableOpacity>
       </View>
@@ -326,7 +329,7 @@ function PhotoGridItem({
         }}
       />
       <View style={[styles.statusBadge, { backgroundColor: badge.color }]}>
-        <Text style={styles.statusBadgeText}>{badge.icon}</Text>
+        <Icon name={badge.name} size={13} color="#ffffff" />
       </View>
     </TouchableOpacity>
   );
@@ -375,7 +378,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 8,
     backgroundColor: "#2a2a4a",
+    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
+    gap: 5,
   },
   filterButtonActive: {
     backgroundColor: "#7c4dff",
@@ -474,10 +480,6 @@ const styles = StyleSheet.create({
     borderRadius: 11,
     justifyContent: "center",
     alignItems: "center",
-  },
-  statusBadgeText: {
-    fontSize: 12,
-    color: "#ffffff",
   },
   addButton: {
     backgroundColor: "#7c4dff",

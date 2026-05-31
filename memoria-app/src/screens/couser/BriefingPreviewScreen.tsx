@@ -29,7 +29,9 @@ import {
   type Briefing,
   type BriefingSlide,
 } from "../../lib/briefing";
+import { logPreferenceSignal } from "../../lib/preferenceSignals";
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
+import Icon from "../../components/Icon";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -107,6 +109,18 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
 
   async function handleGenerate() {
     if (!userId) return;
+    // Regenerating over an existing briefing is an implicit rejection of the
+    // prior draft — log it before generateBriefing overwrites the row.
+    if (briefing) {
+      logPreferenceSignal({
+        userId,
+        coUserId,
+        signalType: "briefing_regenerated",
+        referenceId: briefing.id,
+        content: slides.map((s) => s.title).join(" | "),
+        metadata: { date, slide_count: slides.length },
+      });
+    }
     setGenerating(true);
     setError(null);
     const out = await generateBriefing(userId, date);
@@ -165,6 +179,8 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
         style: "destructive",
         onPress: async () => {
           if (!briefing) return;
+          // Snapshot the removed slide before setSlides drops it from state.
+          const removed = slides[index];
           const newOrder = slides.map((_, i) => i).filter((i) => i !== index);
           const next = newOrder.map((i) => slides[i]);
           setSlides(next);
@@ -173,6 +189,16 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
             Alert.alert("Remove failed", res.error ?? "Unknown error");
             load();
           } else {
+            if (userId) {
+              logPreferenceSignal({
+                userId,
+                coUserId,
+                signalType: "briefing_slide_deleted",
+                referenceId: briefing.id,
+                content: removed ? `${removed.kind}: ${removed.title}` : null,
+                metadata: { index, kind: removed?.kind },
+              });
+            }
             setDirtyIndices(new Set());
           }
         },
@@ -200,6 +226,20 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
     if (lastErr) {
       Alert.alert("Save failed", lastErr);
     } else {
+      if (userId) {
+        for (const idx of dirtyIndices) {
+          const slide = slides[idx];
+          if (!slide) continue;
+          logPreferenceSignal({
+            userId,
+            coUserId,
+            signalType: "briefing_slide_edited",
+            referenceId: briefing.id,
+            content: `${slide.kind}: ${slide.title}`,
+            metadata: { index: idx },
+          });
+        }
+      }
       setDirtyIndices(new Set());
       Alert.alert("Saved", "Your edits have been saved.");
       load();
@@ -217,6 +257,16 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
     if (!res.ok) {
       Alert.alert("Approve failed", res.error ?? "Unknown error");
       return;
+    }
+    if (userId) {
+      logPreferenceSignal({
+        userId,
+        coUserId,
+        signalType: "briefing_approved",
+        referenceId: briefing.id,
+        content: slides.map((s) => s.title).join(" | "),
+        metadata: { date: briefing.briefing_date, slide_count: slides.length },
+      });
     }
     Alert.alert("Approved", "The briefing will be shown tomorrow.");
     load();
@@ -286,9 +336,12 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
         {generating ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.generateButtonText}>
-            {briefing ? "🔄 Regenerate Briefing" : "✨ Generate Briefing"}
-          </Text>
+          <>
+            <Icon name={briefing ? "refresh" : "sparkle"} size={18} color="#ffffff" accentColor="#ffffff" />
+            <Text style={styles.generateButtonText}>
+              {briefing ? "Regenerate Briefing" : "Generate Briefing"}
+            </Text>
+          </>
         )}
       </TouchableOpacity>
 
@@ -511,7 +564,10 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
     paddingHorizontal: 18,
     borderRadius: 12,
+    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
+    gap: 8,
     marginBottom: 16,
   },
   generateButtonText: {

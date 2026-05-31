@@ -13,6 +13,7 @@ import {
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import Icon from "../../components/Icon";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -110,10 +111,13 @@ export default function SetupUserLoginScreen({ navigation }: Props) {
         secureTextEntry
       />
 
-      <Text style={styles.hint}>
-        💡 Keep it simple — they'll need to type this to log in. You can always
-        help them.
-      </Text>
+      <View style={styles.hintRow}>
+        <Icon name="tip" size={18} color="#888" />
+        <Text style={styles.hint}>
+          Keep it simple — they'll need to type this to log in. You can always
+          help them.
+        </Text>
+      </View>
 
       <TouchableOpacity
         style={styles.button}
@@ -170,10 +174,16 @@ const styles = StyleSheet.create({
     color: "#fff",
     marginBottom: 20,
   },
+  hintRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginBottom: 24,
+  },
   hint: {
+    flex: 1,
     fontSize: 14,
     color: "#888",
-    marginBottom: 24,
     lineHeight: 20,
   },
   button: {

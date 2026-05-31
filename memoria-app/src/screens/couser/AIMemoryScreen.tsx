@@ -12,6 +12,7 @@ import {
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useAuth } from "../../context/AuthContext";
+import Icon from "../../components/Icon";
 import {
   listMemoriesForCoUser,
   updateMemoryStatus,
@@ -19,6 +20,7 @@ import {
   type AssistantMemory,
   type MemoryKind,
 } from "../../lib/memory";
+import { logPreferenceSignal } from "../../lib/preferenceSignals";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -47,7 +49,7 @@ const KIND_FILTERS: Array<KindFilter> = [
 const STATUS_FILTERS: StatusFilter[] = ["all", "active", "pinned", "suppressed"];
 
 export default function AIMemoryScreen({ navigation }: Props) {
-  const { userId } = useAuth();
+  const { userId, coUserId } = useAuth();
   const [memories, setMemories] = useState<AssistantMemory[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
@@ -114,6 +116,16 @@ export default function AIMemoryScreen({ navigation }: Props) {
       Alert.alert("Error", res.error ?? "Failed to update.");
       return;
     }
+    if (userId) {
+      logPreferenceSignal({
+        userId,
+        coUserId,
+        signalType: next === "pinned" ? "memory_pinned" : "memory_unpinned",
+        referenceId: m.id,
+        content: m.content,
+        metadata: { kind: m.kind, importance: m.importance, previousStatus: m.status },
+      });
+    }
     load();
   }
 
@@ -123,6 +135,16 @@ export default function AIMemoryScreen({ navigation }: Props) {
     if (!res.ok) {
       Alert.alert("Error", res.error ?? "Failed to update.");
       return;
+    }
+    if (userId) {
+      logPreferenceSignal({
+        userId,
+        coUserId,
+        signalType: next === "suppressed" ? "memory_suppressed" : "memory_restored",
+        referenceId: m.id,
+        content: m.content,
+        metadata: { kind: m.kind, importance: m.importance, previousStatus: m.status },
+      });
     }
     load();
   }
@@ -141,6 +163,17 @@ export default function AIMemoryScreen({ navigation }: Props) {
             if (!res.ok) {
               Alert.alert("Error", res.error ?? "Failed to delete.");
               return;
+            }
+            // Capture m.content here — the row is gone after deleteMemory.
+            if (userId) {
+              logPreferenceSignal({
+                userId,
+                coUserId,
+                signalType: "memory_deleted",
+                referenceId: m.id,
+                content: m.content,
+                metadata: { kind: m.kind, importance: m.importance, status: m.status },
+              });
             }
             load();
           },
@@ -272,13 +305,16 @@ export default function AIMemoryScreen({ navigation }: Props) {
                 >
                   {KIND_LABELS[m.kind]}
                 </Text>
-                <Text style={styles.statusBadge}>
-                  {isPinned
-                    ? "📌 Pinned"
-                    : isSuppressed
-                      ? "🚫 Suppressed"
-                      : "Active"}
-                </Text>
+                <View style={styles.statusBadge}>
+                  {isPinned ? (
+                    <Icon name="pin" size={12} color="#999" />
+                  ) : isSuppressed ? (
+                    <Icon name="block" size={12} color="#999" />
+                  ) : null}
+                  <Text style={styles.statusBadgeText}>
+                    {isPinned ? "Pinned" : isSuppressed ? "Suppressed" : "Active"}
+                  </Text>
+                </View>
               </View>
 
               <Text style={styles.contentText}>{m.content}</Text>
@@ -298,24 +334,27 @@ export default function AIMemoryScreen({ navigation }: Props) {
                   style={styles.actionBtn}
                   onPress={() => handlePinToggle(m)}
                 >
+                  <Icon name="pin" size={15} color="#b388ff" />
                   <Text style={styles.actionText}>
-                    {isPinned ? "Unpin" : "📌 Pin"}
+                    {isPinned ? "Unpin" : "Pin"}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.actionBtn}
                   onPress={() => handleSuppressToggle(m)}
                 >
+                  <Icon name="block" size={15} color="#b388ff" />
                   <Text style={styles.actionText}>
-                    {isSuppressed ? "Restore" : "🚫 Suppress"}
+                    {isSuppressed ? "Restore" : "Suppress"}
                   </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.actionBtn}
                   onPress={() => confirmDelete(m)}
                 >
+                  <Icon name="trash" size={15} color="#ff6b6b" />
                   <Text style={[styles.actionText, styles.deleteAction]}>
-                    🗑️ Delete
+                    Delete
                   </Text>
                 </TouchableOpacity>
               </View>
@@ -461,9 +500,14 @@ const styles = StyleSheet.create({
     color: "#ffb74d",
   },
   statusBadge: {
+    flexDirection: "row" as const,
+    alignItems: "center" as const,
+    gap: 5,
+  },
+  statusBadgeText: {
     fontSize: 12,
     color: "#999",
-    fontStyle: "italic",
+    fontStyle: "italic" as const,
   },
   contentText: {
     fontSize: 16,
@@ -496,7 +540,10 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     backgroundColor: "#1a1a2e",
     borderRadius: 8,
-    alignItems: "center",
+    flexDirection: "row" as const,
+    justifyContent: "center" as const,
+    alignItems: "center" as const,
+    gap: 5,
   },
   actionText: {
     color: "#b388ff",

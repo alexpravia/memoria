@@ -16,6 +16,33 @@ const CONFIDENCE_MAP: Record<string, number> = {
   low: 0.3,
 };
 
+/**
+ * Build the text we embed for a photo. We deliberately fold the AI tags and
+ * the names of identified people into the embedded text — not just the prose
+ * description — so a photo tagged ["beach", "sunset"] is retrievable by a
+ * "beach photo" query even when the description never says "beach". Likewise a
+ * photo of "Maria" is retrievable by her name even if the description is
+ * generic ("Two people smiling at dinner").
+ *
+ * Exported for reuse by the rich re-embed backfill script and unit tests.
+ */
+export function buildPhotoEmbedText(
+  description: string | null | undefined,
+  tags: string[] | null | undefined,
+  peopleNames: string[] | null | undefined
+): string {
+  const tagsText = Array.isArray(tags)
+    ? tags.map((t) => String(t).trim()).filter(Boolean).join(", ")
+    : "";
+  const peopleText = Array.isArray(peopleNames)
+    ? peopleNames.map((n) => String(n).trim()).filter(Boolean).join(", ")
+    : "";
+  return [(description ?? "").trim(), tagsText, peopleText]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join(". ");
+}
+
 async function upsertPendingFlag(
   mediaId: string,
   userId: string,
@@ -136,10 +163,17 @@ export async function processPhoto(
     return result;
   }
 
-  // Fire-and-forget: embed the AI description so this photo is searchable.
-  // Failures here MUST NOT regress the photo pipeline reliability hardening.
-  if (result.description) {
-    void embedAndStore("media", mediaId, result.description);
+  // Fire-and-forget: embed a RICH text blob (description + tags + identified
+  // people names) so this photo is searchable by any of those signals, not
+  // only words that happen to appear in the prose description. Failures here
+  // MUST NOT regress the photo pipeline reliability hardening.
+  const richEmbedText = buildPhotoEmbedText(
+    result.description,
+    result.tags,
+    result.people_identified.map((p) => p.name)
+  );
+  if (richEmbedText) {
+    void embedAndStore("media", mediaId, richEmbedText);
   }
 
   // Link identified people via media_people junction table

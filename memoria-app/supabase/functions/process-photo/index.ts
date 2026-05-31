@@ -12,6 +12,45 @@ const CORS_HEADERS = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
+// Strict JSON Schema for the vision response. With OpenAI Structured Outputs
+// the model is constrained to emit exactly this shape — no more silent parse
+// failures dumping otherwise-fine photos into the review queue. Strict mode
+// requires every property in `required` and `additionalProperties: false`
+// everywhere; `review_reason` is nullable so the model emits null when absent.
+const PHOTO_ANALYSIS_SCHEMA = {
+  name: "photo_analysis",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: [
+      "description",
+      "tags",
+      "people_identified",
+      "needs_review",
+      "review_reason",
+    ],
+    properties: {
+      description: { type: "string" },
+      tags: { type: "array", items: { type: "string" } },
+      people_identified: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["name", "confidence"],
+          properties: {
+            name: { type: "string" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] },
+          },
+        },
+      },
+      needs_review: { type: "boolean" },
+      review_reason: { type: ["string", "null"] },
+    },
+  },
+};
+
 Deno.serve(async (req) => {
   // Handle CORS
   if (req.method === "OPTIONS") {
@@ -109,6 +148,7 @@ Deno.serve(async (req) => {
         ],
         max_tokens: 700,
         temperature: 0.3,
+        response_format: { type: "json_schema", json_schema: PHOTO_ANALYSIS_SCHEMA },
       }),
     });
 
@@ -121,20 +161,35 @@ Deno.serve(async (req) => {
     }
 
     const data = await response.json();
-    const raw = data.choices?.[0]?.message?.content || "";
+    const message = data.choices?.[0]?.message;
+    const refusal = message?.refusal;
+    const raw = message?.content || "";
 
     let result;
-    try {
-      result = JSON.parse(raw);
-    } catch {
-      // AI returned non-JSON — flag for co-user review
+    if (refusal) {
+      // Structured Outputs can return a `refusal` instead of content (e.g. the
+      // model declines a distressing image). Treat as review-needed, never crash.
       result = {
-        description: raw || "Unable to analyze this photo.",
+        description: "This photo needs a closer look.",
         tags: [],
         people_identified: [],
         needs_review: true,
-        review_reason: "AI response could not be parsed as structured data",
+        review_reason: `Model declined to analyze this photo: ${refusal}`,
       };
+    } else {
+      try {
+        result = JSON.parse(raw);
+      } catch {
+        // With Structured Outputs this branch should be unreachable, but keep a
+        // defensive fallback so a parse miss never 500s the import pipeline.
+        result = {
+          description: raw || "Unable to analyze this photo.",
+          tags: [],
+          people_identified: [],
+          needs_review: true,
+          review_reason: "AI response could not be parsed as structured data",
+        };
+      }
     }
 
     return new Response(JSON.stringify(result), {

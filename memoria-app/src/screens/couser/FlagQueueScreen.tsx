@@ -13,6 +13,8 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { FlagItem } from "../../types";
+import Icon, { IconName } from "../../components/Icon";
+import { colors } from "../../theme";
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
 
 type Props = {
@@ -190,20 +192,14 @@ export default function FlagQueueScreen({ navigation }: Props) {
     loadFlags();
   }
 
-  function getTypeIcon(type: string) {
-    switch (type) {
-      case "media":
-        return "📸";
-      case "person":
-        return "👤";
-      case "event":
-        return "📅";
-      case "journal":
-        return "📝";
-      case "mood":
-        return "💭";
-      default:
-        return "🚩";
+  function getTypeIconName(flagType: string): IconName {
+    switch (flagType) {
+      case "media":   return "photos";
+      case "person":  return "addPerson";
+      case "event":   return "calendar";
+      case "journal": return "notes";
+      case "mood":    return "memo";
+      default:        return "review";
     }
   }
 
@@ -306,7 +302,9 @@ export default function FlagQueueScreen({ navigation }: Props) {
       {/* Pending items */}
       {pendingFlags.length === 0 ? (
         <View style={styles.emptyContainer}>
-          <Text style={styles.emptyIcon}>✅</Text>
+          <View style={styles.emptyIcon}>
+            <Icon name="check" size={48} color={colors.success} />
+          </View>
           <Text style={styles.emptyText}>All caught up! No items to review.</Text>
         </View>
       ) : (
@@ -317,7 +315,7 @@ export default function FlagQueueScreen({ navigation }: Props) {
           {pendingFlags.map((flag) => (
             <View key={flag.id} style={styles.flagCard}>
               <View style={styles.flagHeader}>
-                <Text style={styles.flagIcon}>{getTypeIcon(flag.flag_type)}</Text>
+                <Icon name={getTypeIconName(flag.flag_type)} size={20} color={colors.primarySoft} />
                 <View style={styles.flagInfo}>
                   <Text style={styles.flagType}>{flag.flag_type.toUpperCase()}</Text>
                   <Text style={styles.flagDescription}>{flag.description}</Text>
@@ -329,19 +327,22 @@ export default function FlagQueueScreen({ navigation }: Props) {
                   style={styles.approveButton}
                   onPress={() => updateFlag(flag, "approved")}
                 >
-                  <Text style={styles.actionButtonText}>✅ Approve</Text>
+                  <Icon name="check" size={16} color="#ffffff" />
+                  <Text style={styles.actionButtonText}>Approve</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.rejectButton}
                   onPress={() => updateFlag(flag, "rejected")}
                 >
-                  <Text style={styles.actionButtonText}>❌ Reject</Text>
+                  <Icon name="close" size={16} color="#ffffff" />
+                  <Text style={styles.actionButtonText}>Reject</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.hideButton}
                   onPress={() => updateFlag(flag, "hidden")}
                 >
-                  <Text style={styles.actionButtonText}>👁️ Hide</Text>
+                  <Icon name="hide" size={16} color="#ffffff" />
+                  <Text style={styles.actionButtonText}>Hide</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -358,7 +359,7 @@ export default function FlagQueueScreen({ navigation }: Props) {
           {reviewedFlags.map((flag) => (
             <View key={flag.id} style={[styles.flagCard, styles.flagCardReviewed]}>
               <View style={styles.flagHeader}>
-                <Text style={styles.flagIcon}>{getTypeIcon(flag.flag_type)}</Text>
+                <Icon name={getTypeIconName(flag.flag_type)} size={20} color={colors.primarySoft} />
                 <View style={styles.flagInfo}>
                   <Text style={styles.flagDescription}>{flag.description}</Text>
                   <View style={[styles.statusBadge, getStatusStyle(flag.status)]}>
@@ -499,7 +500,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   emptyIcon: {
-    fontSize: 48,
     marginBottom: 12,
   },
   emptyText: {
@@ -606,21 +606,30 @@ const styles = StyleSheet.create({
     backgroundColor: "#1b5e20",
     paddingVertical: 10,
     borderRadius: 8,
+    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
+    gap: 6,
   },
   rejectButton: {
     flex: 1,
     backgroundColor: "#b71c1c",
     paddingVertical: 10,
     borderRadius: 8,
+    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
+    gap: 6,
   },
   hideButton: {
     flex: 1,
     backgroundColor: "#37474f",
     paddingVertical: 10,
     borderRadius: 8,
+    flexDirection: "row",
+    justifyContent: "center",
     alignItems: "center",
+    gap: 6,
   },
   actionButtonText: {
     color: "#ffffff",

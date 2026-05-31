@@ -110,6 +110,12 @@ export async function embedAndStore(
 export interface SearchMemoriesOpts {
   limit?: number;
   kinds?: EmbeddingKind[];
+  /**
+   * Minimum cosine similarity (0..1) a row must clear to be returned. Defaults
+   * to 0 (no filtering) to preserve raw recall for callers like the eval
+   * harness. The agentic assistant passes a higher floor to cut noise.
+   */
+  minSimilarity?: number;
 }
 
 const DEFAULT_KINDS: EmbeddingKind[] = [
@@ -131,6 +137,7 @@ export async function searchMemories(
 ): Promise<MemoryMatch[]> {
   const limit = opts.limit ?? 10;
   const kinds = opts.kinds ?? DEFAULT_KINDS;
+  const minSimilarity = opts.minSimilarity ?? 0;
 
   try {
     const queryEmbedding = await embed(query);
@@ -140,6 +147,7 @@ export async function searchMemories(
       p_query_embedding: queryEmbedding,
       p_match_count: limit,
       p_kinds: kinds,
+      p_min_similarity: minSimilarity,
     });
 
     if (error) {

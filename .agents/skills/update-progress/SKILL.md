@@ -1,21 +1,21 @@
 ---
 name: update-progress
-description: Updates progressLogs.md with one complete daily entry in the repository's existing format. Use when the user explicitly asks at session end to log that day's completed work and provides next steps to include.
+description: Updates progress.md with one complete daily entry in the repository's existing format. Use when the user explicitly asks at session end to log that day's completed work and provides next steps to include.
 ---
 
 # Update Progress
 
-Writes a single end-of-day `progressLogs.md` update that matches the established Memoria format exactly.
+Writes a single end-of-day `progress.md` update that matches the established Memoria format exactly.
 
 ## Use This Skill When
 
-- The user explicitly asks to update `progressLogs.md`.
+- The user explicitly asks to update `progress.md`.
 - The user indicates session wrap-up or end-of-day logging.
 - The user provides next steps they want added.
 
 ## Hard Rules
 
-- Never run this skill unless the user explicitly requests a `progressLogs.md` update.
+- Never run this skill unless the user explicitly requests a `progress.md` update.
 - Never create partial/incremental logs during implementation.
 - Log only completed work for that day; do not include planned-but-unfinished items.
 - Keep wording aligned with existing style: plain-language, impact-focused, and grouped by headings.
@@ -44,7 +44,7 @@ If any are found, include them verbatim (or lightly cleaned for grammar) in a de
 
 ## Output Format Requirements
 
-Match `progressLogs.md` conventions:
+Match `progress.md` conventions:
 
 1. Date heading as `## <Month> <D>, <YYYY>`.
 2. Section headings as `### <Area>`.
@@ -55,12 +55,12 @@ Match `progressLogs.md` conventions:
 
 ## Workflow
 
-1. Read the end of `progressLogs.md` to copy exact formatting patterns.
+1. Read the end of `progress.md` to copy exact formatting patterns.
 2. Scan the thread (main agent + subagent results) for any "flag for next session" style notes.
 3. Draft a single grouped entry for the day from completed work only.
 4. If flags were found, add a `### Flags for Next Session` section before `### Next Steps`.
 5. Insert the user-provided next steps verbatim or near-verbatim for clarity.
-6. Append the entry at the end of `progressLogs.md`.
+6. Append the entry at the end of `progress.md`.
 7. Re-read the appended section to verify heading style, bullets, numbering, and spacing match prior entries.
 
 ## Quality Checklist
@@ -70,4 +70,4 @@ Match `progressLogs.md` conventions:
 3. Any "flag for next session" notes from the thread (main agent or subagents) are captured under `### Flags for Next Session`.
 4. Next steps are included exactly as requested by the user.
 5. No unrelated files were edited.
-6. `progressLogs.md` remains consistent and readable.
+6. `progress.md` remains consistent and readable.

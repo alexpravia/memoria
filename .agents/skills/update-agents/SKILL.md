@@ -18,7 +18,7 @@ Refreshes `AGENTS.md` so future sessions start with the latest working thread an
 - Update `AGENTS.md` only when the user explicitly asks.
 - Prefer updating only the thread reference, current status, recent fixes, and closely related context sections.
 - Do not overwrite durable project overview sections unless they are now clearly inaccurate.
-- Do not update `progressLogs.md` unless the user separately asks for that.
+- Do not update `progress.md` unless the user separately asks for that.
 
 ## Workflow
 

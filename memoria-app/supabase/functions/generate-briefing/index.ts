@@ -28,6 +28,11 @@ const LLM_API_URL =
   "https://api.openai.com/v1/chat/completions";
 const LLM_API_KEY = Deno.env.get("LLM_API_KEY") || "";
 const LLM_MODEL = Deno.env.get("LLM_MODEL") || "gpt-4o-mini";
+// Briefings generate asynchronously (co-user preview / overnight), so we can
+// afford a stronger, slower model here than the latency-critical assistant.
+// Falls back to LLM_MODEL when unset, preserving the single-model default and
+// the project's provider-agnostic env contract.
+const BRIEFING_LLM_MODEL = Deno.env.get("BRIEFING_LLM_MODEL") || LLM_MODEL;
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SUPABASE_SERVICE_ROLE_KEY =
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -52,6 +57,40 @@ const SLIDE_KINDS = [
 const URL_RE = /\b(?:https?:\/\/|www\.)\S+/i;
 const UUID_RE =
   /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+
+// Strict JSON Schema for the slide deck. Structured Outputs guarantees the
+// `{ slides: [...] }` shape and per-slide field/enum validity, so the model can
+// no longer emit malformed JSON that sends a whole briefing to status 'failed'.
+// NOTE: this does NOT replace validateSlides — strict mode cannot enforce the
+// 6–12 count, non-empty-after-trim, no-URL/UUID-in-tts_text, or photo_id pool
+// membership. `photo_id` is nullable (strict mode requires every property in
+// `required`); validateSlides already strips null/empty photo_id.
+const BRIEFING_DECK_SCHEMA = {
+  name: "briefing_deck",
+  strict: true,
+  schema: {
+    type: "object",
+    additionalProperties: false,
+    required: ["slides"],
+    properties: {
+      slides: {
+        type: "array",
+        items: {
+          type: "object",
+          additionalProperties: false,
+          required: ["kind", "title", "body", "tts_text", "photo_id"],
+          properties: {
+            kind: { type: "string", enum: SLIDE_KINDS },
+            title: { type: "string" },
+            body: { type: "string" },
+            tts_text: { type: "string" },
+            photo_id: { type: ["string", "null"] },
+          },
+        },
+      },
+    },
+  },
+};
 
 interface Slide {
   kind: string;
@@ -194,10 +233,10 @@ async function callLLM(messages: any[]): Promise<any> {
       Authorization: `Bearer ${LLM_API_KEY}`,
     },
     body: JSON.stringify({
-      model: LLM_MODEL,
+      model: BRIEFING_LLM_MODEL,
       messages,
       temperature: 0.7,
-      response_format: { type: "json_object" },
+      response_format: { type: "json_schema", json_schema: BRIEFING_DECK_SCHEMA },
     }),
   });
 

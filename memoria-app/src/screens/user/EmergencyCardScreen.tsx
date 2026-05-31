@@ -2,6 +2,23 @@ import React, { useEffect, useState } from "react";
 import { View, Text, TouchableOpacity, StyleSheet } from "react-native";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import { colors, radius, border, type } from "../../theme";
+import Icon from "../../components/Icon";
+
+// Format a phone number as (XXX) XXX-XXXX for 10-digit US numbers,
+// or +1 (XXX) XXX-XXXX for 11-digit numbers starting with 1.
+// Anything else is returned unchanged (international, extensions, etc.).
+function formatPhone(raw: string): string {
+  if (!raw) return raw;
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  if (digits.length === 11 && digits.startsWith("1")) {
+    return `+1 (${digits.slice(1, 4)}) ${digits.slice(4, 7)}-${digits.slice(7)}`;
+  }
+  return raw;
+}
 
 export default function EmergencyCardScreen({ navigation }: any) {
   const { userId } = useAuth();
@@ -68,7 +85,9 @@ export default function EmergencyCardScreen({ navigation }: any) {
 
   return (
     <View testID="emergency-card-screen" style={styles.container}>
-      <Text style={styles.header}>🆘</Text>
+      <View style={styles.headerIcon}>
+        <Icon name="whoAmI" size={32} color={colors.primarySoft} />
+      </View>
 
       <View testID="emergency-card-info" style={styles.card}>
         <Text style={styles.label}>MY NAME IS</Text>
@@ -87,7 +106,7 @@ export default function EmergencyCardScreen({ navigation }: any) {
             <Text testID="emergency-card-contact-name" style={styles.contactValue} numberOfLines={1} adjustsFontSizeToFit>{contactName}</Text>
             <Text style={styles.relation}>({contactRelation})</Text>
             {contactPhone ? (
-              <Text testID="emergency-card-contact-phone" style={styles.phone}>{contactPhone}</Text>
+              <Text testID="emergency-card-contact-phone" style={styles.phone}>{formatPhone(contactPhone)}</Text>
             ) : null}
             {contactEmail ? (
               <Text testID="emergency-card-contact-email" style={styles.email}>{contactEmail}</Text>
@@ -110,70 +129,75 @@ export default function EmergencyCardScreen({ navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
     padding: 40,
   },
-  header: {
-    fontSize: 60,
+  headerIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 30,
   },
   card: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xxl,
     padding: 32,
     width: "100%",
-    borderWidth: 3,
-    borderColor: "#7c4dff",
+    borderWidth: border.emphatic,
+    borderColor: colors.primary,
   },
   label: {
-    fontSize: 14,
-    fontWeight: "bold",
-    color: "#b388ff",
-    letterSpacing: 2,
+    fontSize: type.sm,
+    fontWeight: type.weightBold,
+    color: colors.primarySoft,
+    letterSpacing: type.trackingLabel,
     marginTop: 20,
     marginBottom: 4,
   },
   value: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#fff",
+    fontSize: type.bigBtn,
+    fontWeight: type.weightBold,
+    color: colors.fgStrong,
   },
   contactValue: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#fff",
+    fontSize: type.h2,
+    fontWeight: type.weightBold,
+    color: colors.fgStrong,
   },
   relation: {
-    fontSize: 18,
-    color: "#e0e0e0",
+    fontSize: type.lg,
+    color: colors.fg,
     marginTop: 4,
   },
   phone: {
-    fontSize: 20,
-    color: "#7c4dff",
+    fontSize: type.xl,
+    color: colors.primary,
     marginTop: 8,
-    fontWeight: "600",
+    fontWeight: type.weightMedium,
     letterSpacing: 1,
   },
   email: {
-    fontSize: 18,
-    color: "#7c4dff",
+    fontSize: type.lg,
+    color: colors.primary,
     marginTop: 8,
-    fontWeight: "600",
+    fontWeight: type.weightMedium,
     letterSpacing: 1,
   },
   backButton: {
-    backgroundColor: "#7c4dff",
+    backgroundColor: colors.primary,
     paddingVertical: 18,
     paddingHorizontal: 40,
-    borderRadius: 14,
+    borderRadius: radius.md,
     marginTop: 40,
   },
   backButtonText: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
+    fontSize: type.xl,
+    fontWeight: type.weightMedium,
+    color: colors.fgStrong,
   },
 });

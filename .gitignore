@@ -1,0 +1,5 @@
+
+# local junk / CLI state (added by AI-RAG commit)
+.DS_Store
+/error-photos/
+/memoria-app/supabase/.temp/

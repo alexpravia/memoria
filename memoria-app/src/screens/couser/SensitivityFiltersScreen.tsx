@@ -13,6 +13,8 @@ import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { embedAndStore } from "../../lib/embeddings";
 import { useAuth } from "../../context/AuthContext";
+import Icon, { IconName } from "../../components/Icon";
+import { colors } from "../../theme";
 import { SensitivityFilter, Person } from "../../types";
 
 type Props = {
@@ -160,16 +162,12 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
     ]);
   }
 
-  function getFilterIcon(type: FilterType) {
-    switch (type) {
-      case "person":
-        return "👤";
-      case "topic":
-        return "🚫";
-      case "time_period":
-        return "📅";
-      case "intent":
-        return "💬";
+  function getFilterIconName(filterType: FilterType): IconName {
+    switch (filterType) {
+      case "person":     return "addPerson";
+      case "topic":      return "safety";
+      case "time_period": return "calendar";
+      case "intent":     return "memo";
     }
   }
 
@@ -220,7 +218,7 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
         return (
           <View key={filter.id} style={styles.filterCard}>
             <View style={styles.filterHeader}>
-              <Text style={styles.filterIcon}>{getFilterIcon(ftype)}</Text>
+              <Icon name={getFilterIconName(ftype)} size={20} color={colors.primarySoft} />
               <View style={styles.filterInfo}>
                 <Text style={styles.filterType}>{getFilterLabel(ftype)}</Text>
                 <Text style={[styles.filterValue, isIntent && styles.intentValue]}>
@@ -256,9 +254,12 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
                   setIntentText("");
                 }}
               >
-                <Text style={[styles.typeButtonText, filterType === type && styles.typeButtonTextActive]}>
-                  {getFilterIcon(type)} {getFilterLabel(type)}
-                </Text>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                  <Icon name={getFilterIconName(type)} size={14} color={filterType === type ? colors.fgStrong : colors.primarySoft} />
+                  <Text style={[styles.typeButtonText, filterType === type && styles.typeButtonTextActive]}>
+                    {getFilterLabel(type)}
+                  </Text>
+                </View>
               </TouchableOpacity>
             ))}
           </View>

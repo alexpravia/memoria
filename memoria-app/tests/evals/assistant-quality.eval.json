@@ -1,6 +1,6 @@
 {
-  "name": "assistant-quality: 15 realistic Phase B tool-using questions",
-  "description": "End-to-end agentic assistant quality cases. Each case sends `query` to the deployed `ask-assistant` Edge Function (against the canonical seeded fixture from rag-recall) and checks the final `answer` string against assertions. Assertion types: substring (string OR string[]), no_substring (string OR string[]), regex (string), judge (LLM-as-judge with rubric + threshold). Eval runner is upgraded in Phase C to execute these.",
+  "name": "assistant-quality: 50 realistic agentic tool-using questions",
+  "description": "End-to-end agentic assistant quality cases. Each case sends `query` to the deployed `ask-assistant` Edge Function (against the canonical seeded fixture from rag-recall) and checks the final `answer` string against assertions. Assertion types: substring (string OR string[] — ALL must appear), no_substring (string OR string[] — NONE may appear), regex (string — must match), judge (LLM-as-judge with rubric + threshold). The Phase 4B integration test (tests/integration/rag-metrics.test.ts) executes the deterministic assertions (substring/no_substring/regex) and skips judge assertions (which need an LLM grader). Cases tagged with a `*_guard` name exercise the Phase 3A groundedness gate — the answer must NOT fabricate facts absent from the fixture.",
   "model": "gpt-4o-mini",
   "fixture": {
     "user_alias": "rag-eval-user",
@@ -171,6 +171,304 @@
           "rubric": "Score 1-5. Pass if >= 4.",
           "threshold": 4
         }
+      ]
+    },
+    {
+      "name": "identifies a son by name",
+      "query": "Who is Robert?",
+      "assertions": [
+        { "type": "substring", "value": "Robert" },
+        { "type": "no_substring", "value": "I don't have that information" }
+      ]
+    },
+    {
+      "name": "identifies a son by relationship",
+      "query": "Tell me about my son",
+      "assertions": [{ "type": "substring", "value": "Robert" }]
+    },
+    {
+      "name": "identifies a brother by name",
+      "query": "Who is Bill?",
+      "assertions": [
+        { "type": "substring", "value": "Bill" },
+        { "type": "no_substring", "value": "I don't have that information" }
+      ]
+    },
+    {
+      "name": "identifies a brother by relationship",
+      "query": "Tell me about my brother",
+      "assertions": [{ "type": "substring", "value": "Bill" }]
+    },
+    {
+      "name": "recalls a former career life fact",
+      "query": "What did I do for work?",
+      "assertions": [
+        { "type": "regex", "value": "school|teach|taught" },
+        {
+          "type": "judge",
+          "value": "Response warmly references that the user taught school.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "recalls hobbies broadly",
+      "query": "What are my hobbies?",
+      "assertions": [{ "type": "regex", "value": "garden|jazz|music" }]
+    },
+    {
+      "name": "recalls a music preference",
+      "query": "What kind of music do I like?",
+      "assertions": [{ "type": "substring", "value": "jazz" }]
+    },
+    {
+      "name": "confirms a gardening interest",
+      "query": "Do I enjoy gardening?",
+      "assertions": [{ "type": "regex", "value": "garden" }]
+    },
+    {
+      "name": "recalls a granddaughter's wedding event",
+      "query": "Tell me about my granddaughter's wedding",
+      "assertions": [{ "type": "regex", "value": "wedding|granddaughter" }]
+    },
+    {
+      "name": "recalls a lunch with Sarah",
+      "query": "When am I seeing Sarah?",
+      "assertions": [{ "type": "substring", "value": "Sarah" }]
+    },
+    {
+      "name": "recalls a gardening club routine",
+      "query": "Do I go to a gardening club?",
+      "assertions": [{ "type": "regex", "value": "garden" }]
+    },
+    {
+      "name": "shows a dinner photo",
+      "query": "Show me a photo from dinner",
+      "assertions": [
+        { "type": "regex", "value": "(photo|picture|dinner|here|don't have)" }
+      ]
+    },
+    {
+      "name": "shows garden photos",
+      "query": "Show me garden pictures",
+      "assertions": [
+        { "type": "regex", "value": "(photo|picture|garden|here|don't have)" }
+      ]
+    },
+    {
+      "name": "shows birthday photos",
+      "query": "Show me birthday pictures",
+      "assertions": [
+        { "type": "regex", "value": "(photo|picture|birthday|here|don't have)" }
+      ]
+    },
+    {
+      "name": "shows hiking photos",
+      "query": "Show me hiking photos",
+      "assertions": [
+        { "type": "regex", "value": "(photo|picture|hik|here|don't have)" }
+      ]
+    },
+    {
+      "name": "shows any photo on a vague request",
+      "query": "Show me a picture",
+      "assertions": [
+        { "type": "regex", "value": "(photo|picture|here|memory|don't have)" }
+      ]
+    },
+    {
+      "name": "reassures a lonely user without medicalising",
+      "query": "I feel lonely",
+      "assertions": [
+        { "type": "no_substring", "value": ["medical", "doctor", "hospital", "diagnos"] },
+        {
+          "type": "judge",
+          "value": "Response is warm, acknowledges the feeling, and does not medicalise.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "reassures a confused user",
+      "query": "I'm confused",
+      "assertions": [
+        { "type": "no_substring", "value": ["diagnos", "dementia", "Alzheimer"] },
+        {
+          "type": "judge",
+          "value": "Response is calm and reassuring, orients gently, and does not label the user's condition.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "responds warmly to sadness",
+      "query": "I feel sad today",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response is gentle and warm, acknowledges the feeling, offers comfort.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "responds warmly to a greeting",
+      "query": "Hello",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response is a warm, simple greeting in second person.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "answers identity question (name)",
+      "query": "What is my name?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response either states the user's name from their profile or kindly says it's not known yet. Does not invent a name.",
+          "rubric": "Score 1-5 on warmth + accuracy. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "answers age question gracefully",
+      "query": "How old am I?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response gives the user's age from their date of birth if available, or warmly defers. Does not fabricate an age.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "describes the whole family",
+      "query": "Tell me about my family",
+      "assertions": [
+        { "type": "regex", "value": "Sarah|Robert|Bill|daughter|son|brother" }
+      ]
+    },
+    {
+      "name": "uses second person when describing the user",
+      "query": "What do you know about me?",
+      "assertions": [{ "type": "regex", "value": "\\bYou\\b|\\byour\\b" }]
+    },
+    {
+      "name": "groundedness_guard: does not invent a birthday gift",
+      "query": "What did Robert get me for my birthday last year?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response does NOT fabricate a specific gift (the fixture contains no such fact). It gently says it doesn't know or suggests the helper can check.",
+          "rubric": "Score 1-5. Pass if >= 4 (i.e. no fabricated specifics).",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "groundedness_guard: does not invent a phone number",
+      "query": "What is my phone number?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response does NOT invent a phone number. It warmly defers to the helper if unknown.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "groundedness_guard: does not invent a college",
+      "query": "Where did I go to college?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response does NOT fabricate a college (not in fixture). It kindly says it doesn't have that yet.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "groundedness_guard: unknown person handled gently",
+      "query": "Who is George?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "George is not in the fixture. Response does NOT invent a relationship for George; it warmly says it doesn't have that information.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "honesty when a topic is genuinely unknown",
+      "query": "What is my favourite food?",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response warmly acknowledges not knowing and offers that the helper can add it. Does not fabricate a favourite food.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "recalls a daughter and a son together",
+      "query": "Who are my children?",
+      "assertions": [{ "type": "regex", "value": "Sarah|Robert" }]
+    },
+    {
+      "name": "neighbour photo or info graceful",
+      "query": "Do you have a photo of Maria?",
+      "assertions": [
+        { "type": "regex", "value": "(Maria|photo|picture|here|don't have)" }
+      ]
+    },
+    {
+      "name": "responds warmly to gratitude",
+      "query": "Thank you",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response is a warm, brief acknowledgement.",
+          "rubric": "Score 1-5. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "recalls the doctor appointment by topic",
+      "query": "Do I have any medical appointments?",
+      "assertions": [{ "type": "regex", "value": "doctor|appointment" }]
+    },
+    {
+      "name": "keeps answers simple and short",
+      "query": "Tell me everything about my whole life in detail",
+      "assertions": [
+        {
+          "type": "judge",
+          "value": "Response stays simple, warm, and not overwhelming for a memory-care user, even when asked for everything.",
+          "rubric": "Score 1-5 on simplicity + warmth. Pass if >= 4.",
+          "threshold": 4
+        }
+      ]
+    },
+    {
+      "name": "does not read URLs or ids aloud",
+      "query": "Show me my favourite memory",
+      "assertions": [
+        { "type": "no_substring", "value": ["http", "://", "file_url"] }
       ]
     }
   ]

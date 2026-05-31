@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,13 @@ import * as tts from "../../lib/tts";
 import { useAuth } from "../../context/AuthContext";
 import { askAssistant } from "../../lib/assistant";
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
+
+// Bounds for chat photo tiles. Width is fixed; height adapts to the
+// photo's natural aspect ratio but is clamped so a portrait photo can't
+// blow up the bubble (which used to make the chat un-scrollable).
+const PHOTO_WIDTH = 200;
+const PHOTO_MIN_HEIGHT = 120;
+const PHOTO_MAX_HEIGHT = 280;
 
 interface Message {
   role: "user" | "assistant";
@@ -112,22 +119,36 @@ export default function AssistantScreen({ navigation }: any) {
             ]}>
               {msg.text}
             </Text>
-            {msg.photos && msg.photos.length > 0 && (
+            {/* TODO: chat photos arrive as bare URLs, so the lightbox can't
+                show description/tags/people without a media-id lookup. Open
+                with just the photo for now; a future pass can wire up
+                `askAssistant` to return media ids alongside urls so we can
+                lazy-fetch metadata here. */}
+            {msg.photos && msg.photos.length === 1 && (
+              // Single-photo: render in a plain View. An unbounded nested
+              // horizontal ScrollView (the previous approach) gets measured
+              // taller than its image content and re-measures on every new
+              // message append, making the bubble grow each turn.
+              <View style={styles.singlePhotoContainer}>
+                <ChatPhoto
+                  url={msg.photos[0]}
+                  onPress={() => open({ photoUrl: msg.photos![0] })}
+                />
+              </View>
+            )}
+            {msg.photos && msg.photos.length > 1 && (
               <ScrollView
                 horizontal
                 showsHorizontalScrollIndicator={false}
-                style={styles.photosContainer}
+                style={styles.photosScroll}
+                contentContainerStyle={styles.photosScrollContent}
               >
                 {msg.photos.map((url, j) => (
-                  // TODO: chat photos arrive as bare URLs, so the lightbox
-                  // can't show description/tags/people without a media-id
-                  // lookup. Open with just the photo for now; a future pass
-                  // can wire up `askAssistant` to return media ids alongside
-                  // urls so we can lazy-fetch metadata here.
                   <ChatPhoto
-                    key={j}
+                    key={url}
                     url={url}
                     onPress={() => open({ photoUrl: url })}
+                    isLast={j === msg.photos!.length - 1}
                   />
                 ))}
               </ScrollView>
@@ -166,11 +187,46 @@ export default function AssistantScreen({ navigation }: any) {
   );
 }
 
-function ChatPhoto({ url, onPress }: { url: string; onPress: () => void }) {
+function ChatPhoto({
+  url,
+  onPress,
+  isLast = true,
+}: {
+  url: string;
+  onPress: () => void;
+  isLast?: boolean;
+}) {
   const handlePress = useTapToOpen(onPress);
+  // Default to a square while we wait for natural dimensions; once loaded,
+  // size to the photo's true aspect ratio (clamped) so the bubble wraps
+  // tightly around it instead of stretching unbounded.
+  const [height, setHeight] = useState<number>(PHOTO_WIDTH);
+
+  useEffect(() => {
+    let cancelled = false;
+    Image.getSize(
+      url,
+      (w, h) => {
+        if (cancelled || !w || !h) return;
+        const scaled = (PHOTO_WIDTH * h) / w;
+        const clamped = Math.max(PHOTO_MIN_HEIGHT, Math.min(PHOTO_MAX_HEIGHT, scaled));
+        setHeight(clamped);
+      },
+      () => {
+        // On failure, leave the default square in place.
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [url]);
+
   return (
     <TouchableOpacity onPress={handlePress} activeOpacity={0.85}>
-      <Image source={{ uri: url }} style={styles.photoImage} />
+      <Image
+        source={{ uri: url }}
+        style={[styles.photoImage, { height }, !isLast && styles.photoGap]}
+      />
     </TouchableOpacity>
   );
 }
@@ -269,14 +325,35 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: "bold",
   },
-  photosContainer: {
+  // Single-photo container: a plain View that hugs the photo and stops the
+  // bubble from being inflated by a nested scroll viewport.
+  singlePhotoContainer: {
     marginTop: 10,
+    alignSelf: "flex-start",
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  // Multi-photo horizontal scroller: explicitly non-flex so the bubble
+  // wraps tightly to the strip height rather than letting it expand.
+  photosScroll: {
+    marginTop: 10,
+    alignSelf: "flex-start",
+    flexGrow: 0,
+    flexShrink: 0,
+  },
+  photosScrollContent: {
+    alignItems: "flex-start",
   },
   photoImage: {
-    width: 200,
-    height: 200,
+    width: PHOTO_WIDTH,
+    // `height` is supplied per-photo by <ChatPhoto> based on the image's
+    // natural aspect ratio (clamped between PHOTO_MIN/MAX_HEIGHT) so the
+    // bubble wraps tightly to the photo and the chat stays scrollable.
     borderRadius: 12,
-    marginRight: 8,
     backgroundColor: "#1a1a2e",
+    resizeMode: "cover",
+  },
+  photoGap: {
+    marginRight: 8,
   },
 });

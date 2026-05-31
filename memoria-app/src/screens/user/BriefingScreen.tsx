@@ -13,6 +13,7 @@ import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { SensitivityFilter } from "../../types";
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
+import Icon from "../../components/Icon";
 import {
   getTodaysBriefing,
   resolveSlidePhotos,
@@ -612,7 +613,7 @@ export default function BriefingScreen({ navigation }: any) {
         </TouchableOpacity>
 
         <TouchableOpacity testID="briefing-replay-button" style={styles.replayButton} onPress={replaySlide}>
-          <Text style={styles.replayButtonText}>🔊</Text>
+          <Icon name="listen" size={24} color="#ffffff" />
         </TouchableOpacity>
 
         <TouchableOpacity testID="briefing-next-button" style={styles.navButton} onPress={nextSlide}>

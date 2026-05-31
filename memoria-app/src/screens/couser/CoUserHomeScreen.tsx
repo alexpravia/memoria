@@ -10,6 +10,8 @@ import {
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import { colors, radius, border, type } from "../../theme";
+import Icon, { IconName } from "../../components/Icon";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -219,7 +221,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityLabel="Import contacts"
         accessibilityHint="Opens the contacts import screen"
       >
-        <Text style={styles.actionButtonText}>📇 Import Contacts</Text>
+        <Icon name="contacts" size={18} color={colors.primarySoft} />
+          <Text style={styles.actionButtonText}>Import Contacts</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -230,7 +233,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityLabel="Import calendar events"
         accessibilityHint="Opens the calendar import screen"
       >
-        <Text style={styles.actionButtonText}>📅 Import Calendar Events</Text>
+        <Icon name="calendar" size={18} color={colors.primarySoft} />
+          <Text style={styles.actionButtonText}>Import Calendar Events</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -241,7 +245,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityLabel="Import photos"
         accessibilityHint="Opens the photos import screen"
       >
-        <Text style={styles.actionButtonText}>📸 Import Photos</Text>
+        <Icon name="photos" size={18} color={colors.primarySoft} />
+          <Text style={styles.actionButtonText}>Import Photos</Text>
       </TouchableOpacity>
 
       {/* Safety & Settings */}
@@ -256,7 +261,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityHint="Opens the pending review queue"
       >
         <View style={styles.flagRow}>
-          <Text style={styles.actionButtonText}>🚩 Review Queue</Text>
+          <Icon name="review" size={18} color={colors.danger} />
+            <Text style={styles.actionButtonText}>Review Queue</Text>
           {pendingFlags > 0 && (
             <View style={styles.badge} testID={automationIds.pendingFlagsBadge}>
               <Text style={styles.badgeText}>{pendingFlags}</Text>
@@ -273,7 +279,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityLabel="Sensitivity filters"
         accessibilityHint="Opens the sensitivity filters screen"
       >
-        <Text style={styles.actionButtonText}>🛡️ Sensitivity Filters</Text>
+        <Icon name="safety" size={18} color={colors.danger} />
+          <Text style={styles.actionButtonText}>Sensitivity Filters</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -284,7 +291,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityLabel="Memo's Notes"
         accessibilityHint="Opens what Memo remembers about your loved one"
       >
-        <Text style={styles.actionButtonText}>🧠 Memo's Notes</Text>
+        <Icon name="notes" size={18} color={colors.danger} />
+          <Text style={styles.actionButtonText}>Memo's Notes</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -295,7 +303,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityLabel="Tomorrow's briefing"
         accessibilityHint="Generate, review, and approve tomorrow's morning briefing"
       >
-        <Text style={styles.actionButtonText}>📅 Tomorrow's Briefing</Text>
+        <Icon name="calendar" size={18} color={colors.danger} />
+          <Text style={styles.actionButtonText}>Tomorrow's Briefing</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -306,9 +315,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityLabel="User login setup"
         accessibilityHint="Opens the screen to create or update the user's login"
       >
-        <Text style={styles.actionButtonText}>
-          {hasUserLogin ? "🔑 Set Up Another User" : "🔑 Set Up Their Login"}
-        </Text>
+        <Icon name="login" size={18} color={colors.danger} />
+        <Text style={styles.actionButtonText}>{hasUserLogin ? "Set Up Another User" : "Set Up Their Login"}</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -319,7 +327,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
         accessibilityLabel="Emergency contact settings"
         accessibilityHint="Opens emergency contact settings"
       >
-        <Text style={styles.actionButtonText}>📞 Emergency Contact Number</Text>
+        <Icon name="call" size={18} color={colors.danger} />
+          <Text style={styles.actionButtonText}>Emergency Contact Number</Text>
       </TouchableOpacity>
 
       <TouchableOpacity
@@ -339,7 +348,7 @@ export default function CoUserHomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   content: {
     padding: 40,
@@ -347,14 +356,14 @@ const styles = StyleSheet.create({
     paddingBottom: 60,
   },
   title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
+    fontSize: type.title,
+    fontWeight: type.weightBold,
+    color: colors.primarySoft,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 18,
-    color: "#e0e0e0",
+    fontSize: type.lg,
+    color: colors.fg,
     marginBottom: 32,
   },
   statsRow: {
@@ -364,35 +373,38 @@ const styles = StyleSheet.create({
   },
   statCard: {
     flex: 1,
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
     padding: 12,
     alignItems: "center",
     marginHorizontal: 3,
   },
   statNumber: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#7c4dff",
+    fontSize: type.h2,
+    fontWeight: type.weightBold,
+    color: colors.primary,
   },
   statLabel: {
-    fontSize: 11,
-    color: "#b388ff",
+    fontSize: type.xxs,
+    color: colors.primarySoft,
     marginTop: 4,
   },
   actionButton: {
-    backgroundColor: "#2a2a4a",
+    backgroundColor: colors.surface,
     paddingVertical: 18,
     paddingHorizontal: 20,
-    borderRadius: 12,
+    borderRadius: radius.sm,
     marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: "#7c4dff",
+    borderLeftWidth: border.accent,
+    borderLeftColor: colors.primary,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   actionButtonText: {
-    fontSize: 18,
-    color: "#e0e0e0",
-    fontWeight: "600",
+    fontSize: type.lg,
+    color: colors.fg,
+    fontWeight: type.weightMedium,
   },
   signOutButton: {
     paddingVertical: 16,
@@ -400,38 +412,45 @@ const styles = StyleSheet.create({
     marginTop: 24,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#b388ff",
+    fontSize: type.lg,
+    fontWeight: type.weightBold,
+    color: colors.primarySoft,
     marginTop: 24,
     marginBottom: 12,
   },
   importButton: {
-    backgroundColor: "#2a2a4a",
+    backgroundColor: colors.surface,
     paddingVertical: 18,
     paddingHorizontal: 20,
-    borderRadius: 12,
+    borderRadius: radius.sm,
     marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: "#b388ff",
+    borderLeftWidth: border.accent,
+    borderLeftColor: colors.primarySoft,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   safetyButton: {
-    backgroundColor: "#2a2a4a",
+    backgroundColor: colors.surface,
     paddingVertical: 18,
     paddingHorizontal: 20,
-    borderRadius: 12,
+    borderRadius: radius.sm,
     marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: "#ff6b6b",
+    borderLeftWidth: border.accent,
+    borderLeftColor: colors.danger,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
   },
   flagRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    flex: 1,
   },
   badge: {
-    backgroundColor: "#ff6b6b",
-    borderRadius: 12,
+    backgroundColor: colors.danger,
+    borderRadius: radius.full,
     minWidth: 24,
     height: 24,
     justifyContent: "center",
@@ -439,12 +458,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
   },
   badgeText: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "bold",
+    color: colors.fgStrong,
+    fontSize: type.xs,
+    fontWeight: type.weightBold,
   },
   signOutText: {
-    fontSize: 16,
-    color: "#ff6b6b",
+    fontSize: type.base,
+    color: colors.danger,
   },
 });

@@ -40,6 +40,11 @@ const SERVICE_ROLE_KEY =
 
 const MAX_TOOL_LOOPS = 5;
 const HISTORY_WINDOW = 10;
+// 2A: cosine-similarity floor for the agentic search_memories tool. Below this,
+// a dense match is noise that confuses the assistant. The recent-verified-photo
+// fallback still covers the legitimately-empty case. Topic filters in
+// get_life_facts intentionally use 0 (raw recall).
+const SEARCH_MIN_SIMILARITY = 0.65;
 
 const CORS_HEADERS = {
   "Access-Control-Allow-Origin": "*",
@@ -216,14 +221,20 @@ function makeHandlers(supabase: any, userId: string) {
   async function semanticSearch(
     query: string,
     kinds: string[] | undefined,
-    limit: number
+    limit: number,
+    minSimilarity = 0
   ) {
     const queryEmbedding = await embedQuery(query);
-    const { data, error } = await supabase.rpc("match_memories", {
+    // 2B: hybrid retrieval — dense (meaning) fused with lexical/BM25 (exact
+    // names, dates, tags) via RRF. minSimilarity floors only the dense arm; an
+    // exact keyword hit always counts. Same return shape as match_memories.
+    const { data, error } = await supabase.rpc("match_memories_hybrid", {
       p_user_id: userId,
       p_query_embedding: queryEmbedding,
+      p_query_text: query,
       p_match_count: limit,
       p_kinds: kinds ?? ["media", "life_facts", "people", "events"],
+      p_min_similarity: minSimilarity,
     });
     if (error) throw new Error(error.message);
     return (data ?? []) as Array<{
@@ -250,7 +261,12 @@ function makeHandlers(supabase: any, userId: string) {
           Array.isArray(args?.kinds) && args.kinds.length > 0
             ? (args.kinds as string[])
             : undefined;
-        const results = await semanticSearch(query, kinds, limit);
+        const results = await semanticSearch(
+          query,
+          kinds,
+          limit,
+          SEARCH_MIN_SIMILARITY
+        );
 
         // Fallback: if RAG returned 0 and caller wants media (or any kind),
         // fall back to recent verified photos. Handles two cases:
@@ -548,6 +564,263 @@ function summarizeToolResult(name: string, result: any): string {
   return "ok";
 }
 
+// ─── 1D: Dynamic tool selection ─────────────────────────────────────
+// Offering all 8 tools on every turn adds decision noise and tokens for
+// simple questions ("What is my name?" sees the photo-search tool). We
+// narrow the toolset for clearly-typed questions and fall back to the full
+// set for anything ambiguous, so we never strand the model without a tool
+// it actually needs. Conservative on purpose: only narrow on strong signals.
+function selectTools(question: string): typeof TOOL_DEFINITIONS {
+  const q = (question || "").toLowerCase();
+  // Always offer the write/safety tools. Even on a narrowed turn the user may
+  // simultaneously express a preference to remember ("show my photos, I love
+  // the beach") or a safety concern to flag ("show me a photo, my chest hurts"),
+  // and those must never be stranded. We only narrow the READ tools.
+  const ALWAYS = ["remember_about_user", "flag_for_co_user"];
+  const byName = (names: string[]) =>
+    TOOL_DEFINITIONS.filter(
+      (t) => names.includes(t.name) || ALWAYS.includes(t.name)
+    );
+
+  const isPhoto =
+    /\b(photo|photos|picture|pictures|pic|pics|image|images)\b|show me|look at/.test(
+      q
+    );
+  const isCalendar =
+    /\b(today|tonight|tomorrow|yesterday|schedule|appointment|appointments|calendar|event|events|plans?|week|weekend)\b/.test(
+      q
+    );
+  const isIdentity =
+    /\bmy name\b|who am i|where do i live|where am i|how old|my age|birthday|born|my address/.test(
+      q
+    );
+
+  // Photo/person lookups: keep get_person so "show me a photo of Maria" works.
+  if (isPhoto) return byName(["search_memories", "get_person", "recall_about_user"]);
+  if (isCalendar)
+    return byName(["list_events", "get_user_profile", "recall_about_user"]);
+  if (isIdentity)
+    return byName(["get_user_profile", "get_life_facts", "recall_about_user"]);
+  return TOOL_DEFINITIONS;
+}
+
+// ─── 1E: Tool result size limits ────────────────────────────────────
+// Long tool results (a 600-word key_facts, 10 events, 30 life facts) bloat
+// the context window across the tool loop and worsen "lost in the middle".
+// We clamp the bulky fields before injecting into context AND persisting, so
+// the trimmed shape stays consistent when history is replayed next turn.
+const MAX_SNIPPET_CHARS = 500;
+
+function truncate(s: string, max: number): string {
+  if (typeof s !== "string") return s;
+  return s.length > max ? s.slice(0, max) + "…" : s;
+}
+
+function clampToolResult(name: string, result: any): any {
+  if (!result || typeof result !== "object" || result.error) return result;
+  try {
+    if (name === "search_memories" && Array.isArray(result.results)) {
+      // Trim only text_snippet; metadata.file_url MUST stay intact (photos).
+      return {
+        ...result,
+        results: result.results.map((r: any) => ({
+          ...r,
+          text_snippet: truncate(String(r?.text_snippet ?? ""), MAX_SNIPPET_CHARS),
+        })),
+      };
+    }
+    if (name === "get_life_facts" && Array.isArray(result.facts)) {
+      return {
+        ...result,
+        facts: result.facts.slice(0, 30).map((f: any) => ({
+          ...f,
+          fact: truncate(String(f?.fact ?? ""), MAX_SNIPPET_CHARS),
+        })),
+      };
+    }
+    if (name === "list_events" && Array.isArray(result.events)) {
+      return {
+        ...result,
+        events: result.events.slice(0, 20).map((e: any) => ({
+          ...e,
+          title: truncate(String(e?.title ?? ""), 120),
+          description: truncate(String(e?.description ?? ""), 200),
+        })),
+      };
+    }
+    if (name === "get_person" && Array.isArray(result.people)) {
+      return {
+        ...result,
+        people: result.people.map((p: any) => ({
+          ...p,
+          key_facts: Array.isArray(p?.key_facts)
+            ? p.key_facts.slice(0, 10).map((k: any) => truncate(String(k), 200))
+            : truncate(String(p?.key_facts ?? ""), MAX_SNIPPET_CHARS),
+          emotional_notes: truncate(String(p?.emotional_notes ?? ""), MAX_SNIPPET_CHARS),
+        })),
+      };
+    }
+    if (name === "recall_about_user" && Array.isArray(result.memories)) {
+      return {
+        ...result,
+        memories: result.memories.slice(0, 20).map((m: any) => ({
+          ...m,
+          content: truncate(String(m?.content ?? ""), MAX_SNIPPET_CHARS),
+        })),
+      };
+    }
+  } catch {
+    return result;
+  }
+  return result;
+}
+
+// ─── 3A: grounding evidence extraction ──────────────────────────────
+// Pull the human-readable factual content out of a tool result so the
+// groundedness checker can verify the final answer against it. We deliberately
+// exclude structural noise (file_urls, ids) and keep only asserted facts.
+function extractGroundingText(name: string, result: any): string[] {
+  if (!result || typeof result !== "object" || result.error) return [];
+  const out: string[] = [];
+  try {
+    if (name === "search_memories" && Array.isArray(result.results)) {
+      for (const r of result.results) {
+        if (r?.text_snippet) out.push(String(r.text_snippet));
+      }
+    } else if (name === "get_person" && Array.isArray(result.people)) {
+      for (const p of result.people) {
+        const facts = Array.isArray(p?.key_facts)
+          ? p.key_facts.join("; ")
+          : p?.key_facts ?? "";
+        out.push(
+          [p?.full_name, p?.relationship, facts, p?.emotional_notes]
+            .filter(Boolean)
+            .join(" — ")
+        );
+      }
+    } else if (name === "get_life_facts" && Array.isArray(result.facts)) {
+      for (const f of result.facts) if (f?.fact) out.push(String(f.fact));
+    } else if (name === "list_events" && Array.isArray(result.events)) {
+      for (const e of result.events) {
+        out.push(
+          [e?.title, e?.description, e?.event_date].filter(Boolean).join(" — ")
+        );
+      }
+    } else if (name === "recall_about_user" && Array.isArray(result.memories)) {
+      for (const m of result.memories) if (m?.content) out.push(String(m.content));
+    } else if (name === "get_user_profile" && result.profile) {
+      const p = result.profile;
+      out.push(
+        [p?.full_name, p?.location, p?.date_of_birth].filter(Boolean).join(" — ")
+      );
+    }
+  } catch {
+    // best-effort extraction
+  }
+  return out.filter((s) => s && s.trim());
+}
+
+// Safe replacements when a check suppresses an answer. Both are intentionally
+// grounded + non-sensitive so they never re-trigger a downstream check.
+const UNGROUNDED_FALLBACK =
+  "I want to be sure I only share what I know for certain. Let me check with your helper about that.";
+const SENSITIVE_FALLBACK =
+  "I don't have something to share about that right now. Your helper can help with it.";
+
+// 3A: ask a cheap, deterministic LLM pass whether the answer is supported by
+// the retrieved evidence. Fails OPEN — a checker error must never block a
+// legitimate answer (it would degrade the experience for no safety gain).
+async function isAnswerGrounded(
+  answer: string,
+  evidence: string[]
+): Promise<boolean> {
+  try {
+    const ev = evidence
+      .slice(0, 12)
+      .map((s, i) => `(${i + 1}) ${s}`)
+      .join("\n");
+    const res = await fetch(LLM_API_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${LLM_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: LLM_MODEL,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You check whether an assistant's answer is grounded in retrieved evidence. " +
+              "Reply with exactly one word. Say GROUNDED if every specific factual claim " +
+              "(names, dates, relationships, events, places) in the answer is supported by the " +
+              "evidence. Say UNGROUNDED if the answer states a specific fact not present in the " +
+              "evidence. General warmth, reassurance, or asking the user a question counts as GROUNDED.",
+          },
+          {
+            role: "user",
+            content: `Evidence:\n${ev}\n\nAnswer:\n"${answer}"\n\nOne word: GROUNDED or UNGROUNDED.`,
+          },
+        ],
+        max_tokens: 4,
+        temperature: 0,
+      }),
+    });
+    if (!res.ok) return true; // fail-open
+    const data = await res.json();
+    const verdict = String(data.choices?.[0]?.message?.content ?? "")
+      .trim()
+      .toUpperCase();
+    return !verdict.startsWith("UNGROUNDED");
+  } catch {
+    return true; // fail-open
+  }
+}
+
+// 3B: re-run the sensitivity classifier on the GENERATED answer (Memo can
+// synthesize sensitive content from non-sensitive fragments). Skips when the
+// user has no avoid-rules. Fails OPEN, matching the project's read-path policy.
+async function isAnswerAllowed(
+  supabase: any,
+  userId: string,
+  answer: string
+): Promise<boolean> {
+  try {
+    const { data: rules, error } = await supabase
+      .from("sensitivity_filters")
+      .select(
+        "id, filter_type, intent_text, filter_value, person_id, start_date, end_date"
+      )
+      .eq("user_id", userId);
+    if (error || !Array.isArray(rules) || rules.length === 0) return true;
+
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/check-sensitivity`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${SERVICE_ROLE_KEY}`,
+        apikey: SERVICE_ROLE_KEY,
+      },
+      body: JSON.stringify({
+        items: [{ id: "generated-answer", kind: "media", text: answer }],
+        rules: rules.map((r: any) => ({
+          id: r.id,
+          intent_text: r.intent_text ?? r.filter_value ?? "",
+          filter_type: r.filter_type,
+          filter_value: r.filter_value ?? undefined,
+        })),
+      }),
+    });
+    if (!res.ok) return true; // fail-open
+    const data = await res.json();
+    const decisions = data?.decisions;
+    if (!Array.isArray(decisions) || decisions.length === 0) return true;
+    return decisions[0]?.allow !== false;
+  } catch {
+    return true; // fail-open
+  }
+}
+
 interface DBMessage {
   role: "user" | "assistant" | "tool" | "system";
   content: string | null;
@@ -679,6 +952,12 @@ Deno.serve(async (req) => {
     const handlers = makeHandlers(supabase, userId);
     const photos: string[] = [];
     const tool_trace: Array<{ name: string; summary: string }> = [];
+    // 3A: accumulate the factual evidence retrieved across the tool loop so the
+    // final answer can be verified against it before it reaches the user.
+    const groundingContext: string[] = [];
+
+    // 1D: narrow the toolset to what this question actually needs.
+    const activeTools = selectTools(question);
 
     let finalAnswer = "";
 
@@ -692,7 +971,7 @@ Deno.serve(async (req) => {
         body: JSON.stringify({
           model: LLM_MODEL,
           messages,
-          tools: TOOL_DEFINITIONS.map((t) => ({ type: "function", function: t })),
+          tools: activeTools.map((t) => ({ type: "function", function: t })),
           tool_choice: "auto",
           max_tokens: 600,
           temperature: 0.5,
@@ -741,11 +1020,13 @@ Deno.serve(async (req) => {
 
           const handler = handlers[name];
           let result: any;
+          const toolStartedAt = Date.now();
           if (!handler) {
             result = { error: `unknown tool: ${name}` };
           } else {
             result = await handler(parsedArgs);
           }
+          const toolDurationMs = Date.now() - toolStartedAt;
 
           // Pull any media file_urls into the photos array.
           if (name === "search_memories" && Array.isArray(result?.results)) {
@@ -757,9 +1038,29 @@ Deno.serve(async (req) => {
             }
           }
 
-          tool_trace.push({ name, summary: summarizeToolResult(name, result) });
+          // 3A: collect factual evidence for the post-generation grounding check.
+          groundingContext.push(...extractGroundingText(name, result));
 
-          const toolMsgContent = JSON.stringify(result);
+          const summary = summarizeToolResult(name, result);
+          tool_trace.push({ name, summary });
+
+          // 2C: persist a lightweight trace row for observability/debugging.
+          // Never let tracing failures break the conversation loop.
+          try {
+            await supabase.from("conversation_traces").insert({
+              conversation_id: conversationId,
+              user_id: userId,
+              tool_name: name,
+              args_summary: JSON.stringify(parsedArgs ?? {}).slice(0, 500),
+              result_summary: summary,
+              duration_ms: toolDurationMs,
+            });
+          } catch (_traceErr) {
+            // swallow — traces are best-effort
+          }
+
+          // 1E: clamp bulky fields before they enter context / persistence.
+          const toolMsgContent = JSON.stringify(clampToolResult(name, result));
           messages.push({
             role: "tool",
             tool_call_id: call.id,
@@ -779,30 +1080,66 @@ Deno.serve(async (req) => {
         continue;
       }
 
-      // Plain text answer — persist and exit.
+      // Plain text answer — defer persistence until AFTER the safety checks so
+      // a suppressed answer never leaks into stored history (or back into the
+      // context window on the next turn).
       finalAnswer = msg.content || "I'm not sure how to answer that.";
-      await supabase.from("messages").insert({
-        conversation_id: conversationId,
-        role: "assistant",
-        content: finalAnswer,
-      });
       break;
     }
 
     if (!finalAnswer) {
       finalAnswer =
         "I'm having trouble finding an answer right now. Please try again.";
-      await supabase.from("messages").insert({
-        conversation_id: conversationId,
-        role: "assistant",
-        content: finalAnswer,
-      });
     }
+
+    // Track whether a gate suppressed the answer — if so we also withhold the
+    // photos that were gathered for the original (rejected) response.
+    let suppressed = false;
+
+    // ─── 3A: post-generation groundedness gate ──────────────────────
+    // A hallucinated family fact told to someone with dementia is a safety
+    // issue, not a UX nit. Only runs when we actually retrieved evidence.
+    if (finalAnswer && groundingContext.length > 0) {
+      const grounded = await isAnswerGrounded(finalAnswer, groundingContext);
+      if (!grounded) {
+        finalAnswer = UNGROUNDED_FALLBACK;
+        suppressed = true;
+        try {
+          await supabase.from("flag_queue").insert({
+            user_id: userId,
+            flag_type: "journal",
+            reference_id: userId,
+            description:
+              "[groundedness] Memo suppressed a possibly-ungrounded answer. Please review the conversation.",
+          });
+        } catch (_e) {
+          // best-effort flag; never block the response
+        }
+      }
+    }
+
+    // ─── 3B: output sensitivity gate ────────────────────────────────
+    // Catch sensitive content Memo may have synthesized from non-sensitive
+    // fragments. Skip when the answer is already the safe groundedness fallback.
+    if (!suppressed) {
+      const allowed = await isAnswerAllowed(supabase, userId, finalAnswer);
+      if (!allowed) {
+        finalAnswer = SENSITIVE_FALLBACK;
+        suppressed = true;
+      }
+    }
+
+    // Persist the final (possibly-redacted) assistant message exactly once.
+    await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content: finalAnswer,
+    });
 
     return jsonResponse({
       answer: finalAnswer,
       conversationId,
-      ...(photos.length > 0 ? { photos } : {}),
+      ...(photos.length > 0 && !suppressed ? { photos } : {}),
       tool_trace,
     });
   } catch (err) {
