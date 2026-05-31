@@ -2,4 +2,9 @@
 # local junk / CLI state (added by AI-RAG commit)
 .DS_Store
 /error-photos/
-/memoria-app/supabase/.temp/
+
+# monorepo: ignore root node_modules (workspace packages use their own)
+node_modules/
+
+# supabase temp files
+/apps/mobile/supabase/.temp/
