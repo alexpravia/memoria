@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Memoria — Motion Study</title>
+<template id="__bundler_thumbnail">
+  <svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" fill="#1a1a2e"/>
+    <path d="M30 60 50 40 70 60" fill="none" stroke="#b388ff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="50" cy="74" r="4" fill="#7c4dff"/>
+  </svg>
+</template>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;
+    background:
+      radial-gradient(900px 600px at 50% -10%, #2a2746, transparent 60%),
+      radial-gradient(700px 500px at 100% 100%, #241f3a, transparent 55%),
+      #16151f;
+    color: #e0e0e0;
+    -webkit-font-smoothing: antialiased;
+    min-height: 100%;
+  }
+  input { font-family: inherit; }
+
+  .stage {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 22px; padding: 30px 16px 60px;
+  }
+  .heading { text-align: center; }
+  .heading h1 { margin: 0; font-size: 22px; font-weight: 700; color: #fff; letter-spacing: 0.2px; }
+  .heading p { margin: 6px 0 0; font-size: 14px; color: #9a96b5; }
+
+  /* screen switcher */
+  .switchers { display: flex; flex-direction: column; gap: 12px; align-items: center; }
+  .switch-group { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .switch-label {
+    font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+    color: #6f6b8e;
+  }
+  .switcher {
+    display: flex; flex-wrap: wrap; justify-content: center; gap: 6px;
+    background: #211f31; border: 1px solid #322e48;
+    border-radius: 16px; padding: 5px; max-width: 560px;
+  }
+  .switcher button {
+    border: none; cursor: pointer; font-family: inherit; font-size: 13.5px; font-weight: 600;
+    color: #a6a2c2; background: transparent; padding: 9px 13px; border-radius: 11px;
+    transition: background .25s, color .25s; display: flex; align-items: center; gap: 6px;
+  }
+  .switcher button.active { background: #7c4dff; color: #fff; }
+
+  .phone-wrap { position: relative; }
+  .hint { font-size: 12.5px; color: #807c9c; max-width: 380px; text-align: center; line-height: 1.5; }
+
+  /* ============ MOTION KEYFRAMES ============ */
+  @keyframes m-rise {
+    from { opacity: 0; transform: translateY(16px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes m-leave {
+    from { opacity: 1; transform: translateX(0) scale(1); max-height: 200px; }
+    to   { opacity: 0; transform: translateX(40px) scale(0.96); max-height: 0; }
+  }
+  @keyframes m-glow {
+    0%, 100% { opacity: 0.62; text-shadow: 0 0 14px rgba(179,136,255,0.25); }
+    50%      { opacity: 1;    text-shadow: 0 0 26px rgba(179,136,255,0.55); }
+  }
+  @keyframes m-shimmer {
+    0%   { transform: translateX(-160%) skewX(-12deg); }
+    60%  { transform: translateX(320%) skewX(-12deg); }
+    100% { transform: translateX(320%) skewX(-12deg); }
+  }
+  @keyframes m-draw { to { stroke-dashoffset: 0; } }
+  @keyframes m-bloom {
+    from { transform: scale(0.12) rotate(-38deg); }
+    to   { transform: scale(1) rotate(0deg); }
+  }
+  @keyframes m-fade-in { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes m-eye-pop {
+    from { opacity: 0; }
+    60%  { opacity: 0; }
+    to   { opacity: 1; }
+  }
+  @keyframes m-drift-a {
+    0%,100% { transform: translate(0,0) scale(1); }
+    50%     { transform: translate(26px,-22px) scale(1.12); }
+  }
+  @keyframes m-drift-b {
+    0%,100% { transform: translate(0,0) scale(1); }
+    50%     { transform: translate(-30px,20px) scale(1.08); }
+  }
+  @keyframes m-drift-c {
+    0%,100% { transform: translate(0,0) scale(1); }
+    50%     { transform: translate(18px,26px) scale(1.15); }
+  }
+  @keyframes m-float-up {
+    0%   { transform: translateY(0); opacity: 0; }
+    12%  { opacity: 1; }
+    88%  { opacity: 1; }
+    100% { transform: translateY(-660px); opacity: 0; }
+  }
+  @keyframes m-rotate { to { transform: rotate(360deg); } }
+  @keyframes m-twinkle { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+  @keyframes m-kenburns-a {
+    from { transform: scale(1) translate(0,0); }
+    to   { transform: scale(1.12) translate(-3%, -2%); }
+  }
+  @keyframes m-kenburns-b {
+    from { transform: scale(1.1) translate(2%, 1%); }
+    to   { transform: scale(1) translate(0,0); }
+  }
+  @keyframes m-kenburns-c {
+    from { transform: scale(1) translate(0, 0); }
+    to   { transform: scale(1.14) translate(3%, -1%); }
+  }
+  @keyframes m-pulse-ring {
+    0%   { transform: scale(1); opacity: 0.55; }
+    100% { transform: scale(1.9); opacity: 0; }
+  }
+  @keyframes m-tint-in { from { opacity: 0; } to { opacity: 0.85; } }
+  @keyframes m-slide-in {
+    from { opacity: 0; transform: translateY(22px) scale(0.985); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+  @keyframes m-breathe {
+    0%,100% { transform: scale(1); }
+    50%     { transform: scale(1.06); }
+  }
+  @keyframes m-float {
+    0%,100% { transform: translateY(0); }
+    50%     { transform: translateY(-8px); }
+  }
+  @keyframes m-settle {
+    from { opacity: 0.9; }
+    to   { opacity: 0; }
+  }
+  @keyframes m-typing {
+    0%, 100% { transform: translateY(0); opacity: 0.5; }
+    50%      { transform: translateY(-5px); opacity: 1; }
+  }
+  @keyframes m-halo {
+    0%   { transform: scale(0.85); opacity: 0.6; }
+    70%  { opacity: 0; }
+    100% { transform: scale(2.1); opacity: 0; }
+  }
+  @keyframes m-border-glow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(124,77,255,0); }
+    50%      { box-shadow: 0 0 24px 2px rgba(124,77,255,0.35); }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script type="text/babel" src="ios-frame.jsx"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="memoria-icons.jsx"></script>
+<script type="text/babel" src="memoria-briefing.jsx"></script>
+<script type="text/babel" src="memoria-signin.jsx"></script>
+<script type="text/babel" src="memoria-home.jsx"></script>
+<script type="text/babel" src="memoria-lists.jsx"></script>
+<script type="text/babel" src="memoria-chat.jsx"></script>
+<script type="text/babel" src="memoria-emergency.jsx"></script>
+<script type="text/babel" src="memoria-couser.jsx"></script>
+<script type="text/babel" src="memoria-forms.jsx"></script>
+
+<script type="text/babel">
+const { useState } = React;
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "intensity": "Subtle",
+  "signinBg": "Aurora + Orbs",
+  "kenBurns": true,
+  "speakingRing": true,
+  "pressFeedback": true,
+  "typingDots": true,
+  "callButton": true
+}/*EDITMODE-END*/;
+
+const AMP = { Off: 0, Subtle: 0.5, Calm: 1, Rich: 1.6 };
+
+const SCREENS = [
+  { id: "signin", label: "Sign-in", icon: "login", group: "User" },
+  { id: "briefing", label: "Briefing", icon: "listen", group: "User" },
+  { id: "chat", label: "Memo", icon: "memo", group: "User" },
+  { id: "emergency", label: "Emergency", icon: "safety", group: "User" },
+  { id: "home", label: "Home", icon: "startDay", group: "Co-user" },
+  { id: "people", label: "People", icon: "contacts", group: "Co-user" },
+  { id: "photos", label: "Photos", icon: "photos", group: "Co-user" },
+  { id: "events", label: "Events", icon: "calendar", group: "Co-user" },
+  { id: "notes", label: "Notes", icon: "notes", group: "Co-user" },
+  { id: "review", label: "Review", icon: "review", group: "Co-user" },
+  { id: "person", label: "Edit Person", icon: "addPerson", group: "Co-user" },
+  { id: "filters", label: "Filters", icon: "hide", group: "Co-user" },
+  { id: "preview", label: "Generate", icon: "sparkle", group: "Co-user" },
+];
+
+const HINTS = {
+  signin: "The forget-me-not unfurls petal-by-petal on open, the wordmark breathes, ambient background drifts, and fields bloom on focus. Try the background options in Tweaks.",
+  briefing: "Photos slowly pan & zoom (Ken Burns), slides cross-dissolve, and a soft ring pulses while Memo is speaking. Tap the speaker to replay.",
+  chat: "Messages glide in, a breathing dot indicator shows Memo thinking, and Memo's reply gets a soft speaking glow. Switch away and back to replay.",
+  emergency: "A slow, reassuring heartbeat halo behind the icon, a gentle breathing glow on the accent border, a calm staggered reveal, and an optional pulsing Call button.",
+  home: "Cards rise in with a gentle stagger; every button springs slightly when pressed.",
+  people: "Rows stagger in with avatars. Switch states to see the breathing forget-me-not loader and the alive empty state.",
+  photos: "Tiles stagger in; filter pills swap the grid. Status badges use the brand icons. Every tile springs on press.",
+  events: "A timeline reveals top-down; the soonest event glows. Buttons spring on press.",
+  notes: "Rows stagger in. Switch states to see the breathing loader and the empty-state check drawing on. Tap an action to watch a row animate out.",
+  review: "Flag cards stagger in. Approve / Reject / Hide animates the card out, then the queue settles — ending on a calm 'all caught up'.",
+  person: "Fields stagger in and bloom a focus glow when tapped; the toggle knob springs; Save shimmers gently.",
+  filters: "Toggle knobs spring across; the detail slider fills smoothly with a glowing thumb. Everything reveals in a calm cascade.",
+  preview: "Tap Generate — the brand flower breathes while it assembles, shimmer placeholders settle, then the briefing cards reveal one by one.",
+};
+
+function App() {
+  const [t, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const [screen, setScreen] = useState("signin");
+
+  const amp = AMP[t.intensity] ?? 0.5;
+  const on = t.intensity !== "Off";
+  const motion = { on, amp, pressFeedback: t.pressFeedback };
+
+  return (
+    <div className="stage">
+      <div className="heading">
+        <h1>Memoria · Motion Study</h1>
+        <p>A living preview — calm, breathing motion across the app. Dial it with Tweaks.</p>
+      </div>
+
+      <div className="switchers">
+        {["User", "Co-user"].map((g) => (
+          <div key={g} className="switch-group">
+            <div className="switch-label">{g}</div>
+            <div className="switcher">
+              {SCREENS.filter((s) => s.group === g).map((s) => (
+                <button key={s.id} className={screen === s.id ? "active" : ""} onClick={() => setScreen(s.id)}>
+                  <Icon name={s.icon} size={16} color={screen === s.id ? "#fff" : "#a6a2c2"} accentColor={screen === s.id ? "#fff" : "#7c4dff"} />
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="phone-wrap">
+        <IOSDevice dark>
+          <div style={{ position: "relative", width: "100%", height: "100%" }}>
+            {screen === "signin" && <SignInScreen key={"si" + t.intensity + t.signinBg} motion={motion} signinBg={t.signinBg} />}
+            {screen === "briefing" && <BriefingScreen key={"br" + t.intensity} motion={motion} kenBurns={t.kenBurns} speakingRing={t.speakingRing} />}
+            {screen === "chat" && <ChatScreen key={"ch" + t.intensity + t.typingDots} motion={motion} typingDots={t.typingDots} />}
+            {screen === "emergency" && <EmergencyScreen key={"em" + t.intensity + t.callButton} motion={motion} callButton={t.callButton} />}
+            {screen === "home" && <HomeScreen key={"hm" + t.intensity} motion={motion} />}
+            {screen === "people" && <PeopleScreen key={"pe" + t.intensity} motion={motion} />}
+            {screen === "photos" && <PhotosScreen key={"ph" + t.intensity} motion={motion} />}
+            {screen === "events" && <EventsScreen key={"ev" + t.intensity} motion={motion} />}
+            {screen === "notes" && <ListScreen key={"ls" + t.intensity} motion={motion} />}
+            {screen === "review" && <ReviewScreen key={"rv" + t.intensity} motion={motion} />}
+            {screen === "person" && <FormScreen key={"pf" + t.intensity} motion={motion} />}
+            {screen === "filters" && <FiltersScreen key={"fl" + t.intensity} motion={motion} />}
+            {screen === "preview" && <PreviewScreen key={"pv" + t.intensity} motion={motion} />}
+          </div>
+        </IOSDevice>
+      </div>
+
+      <div className="hint">{HINTS[screen]}</div>
+
+      <TweaksPanel>
+        <TweakSection label="Motion" />
+        <TweakRadio label="Intensity" value={t.intensity}
+          options={["Off", "Subtle", "Calm", "Rich"]}
+          onChange={(v) => setTweak("intensity", v)} />
+        <TweakToggle label="Press feedback" value={t.pressFeedback}
+          onChange={(v) => setTweak("pressFeedback", v)} />
+
+        <TweakSection label="Sign-in" />
+        <TweakSelect label="Background" value={t.signinBg}
+          options={["Aurora", "Memory orbs", "Constellation", "Aurora + Orbs", "Blend"]}
+          onChange={(v) => setTweak("signinBg", v)} />
+
+        <TweakSection label="Briefing" />
+        <TweakToggle label="Ken Burns photos" value={t.kenBurns}
+          onChange={(v) => setTweak("kenBurns", v)} />
+        <TweakToggle label="Speaking ring" value={t.speakingRing}
+          onChange={(v) => setTweak("speakingRing", v)} />
+
+        <TweakSection label="User side" />
+        <TweakToggle label="Memo typing dots" value={t.typingDots}
+          onChange={(v) => setTweak("typingDots", v)} />
+        <TweakToggle label="Emergency Call button" value={t.callButton}
+          onChange={(v) => setTweak("callButton", v)} />
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>

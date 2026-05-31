@@ -2,14 +2,18 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   FlatList,
   Image,
-  Dimensions,
   Alert,
 } from "react-native";
+import {
+  AnimatedEntrance,
+  SpringPressable,
+  BrandLoader,
+  AliveEmptyState,
+} from "../../motion/primitives";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { reprocessPendingPhotos, reprocessAllPhotos } from "../../lib/photoProcessing";
@@ -17,6 +21,7 @@ import { useAuth } from "../../context/AuthContext";
 import { VerificationStatus } from "../../types";
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
 import Icon, { IconName } from "../../components/Icon";
+import { colors, radius, type as typ } from "../../theme";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -31,9 +36,6 @@ interface PhotoItem {
 
 type FilterOption = "all" | "pending" | "verified";
 
-const SCREEN_WIDTH = Dimensions.get("window").width;
-const PHOTO_SIZE = (SCREEN_WIDTH - 80 - 16) / 3;
-
 function getStatusBadge(status: VerificationStatus): { name: IconName; color: string } {
   switch (status) {
     case "verified":
@@ -44,6 +46,12 @@ function getStatusBadge(status: VerificationStatus): { name: IconName; color: st
       return { name: "block", color: "#b71c1c" };
   }
 }
+
+const FILTERS: { key: FilterOption; label: string; icon?: IconName }[] = [
+  { key: "all", label: "All" },
+  { key: "pending", label: "Pending", icon: "pending" },
+  { key: "verified", label: "Verified", icon: "check" },
+];
 
 export default function ViewPhotosScreen({ navigation }: Props) {
   const { userId } = useAuth();
@@ -160,110 +168,134 @@ export default function ViewPhotosScreen({ navigation }: Props) {
   const pendingCount = photos.filter((p) => p.verification_status === "pending").length;
   const verifiedCount = photos.filter((p) => p.verification_status === "verified").length;
 
+  function filterCount(key: FilterOption): number {
+    if (key === "pending") return pendingCount;
+    if (key === "verified") return verifiedCount;
+    return photos.length;
+  }
+
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
+        <BrandLoader caption="Loading photos…" />
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={styles.title}>Photos</Text>
-        <Text style={styles.subtitle}>
-          {photos.length} photo{photos.length !== 1 ? "s" : ""} imported
-        </Text>
-      </View>
+      <AnimatedEntrance index={0}>
+        <View style={styles.header}>
+          <SpringPressable onPress={() => navigation.goBack()}>
+            <View style={styles.backRow}>
+              <Icon name="back" size={20} color={colors.primarySoft} />
+              <Text style={styles.backText}>Back</Text>
+            </View>
+          </SpringPressable>
+          <Text style={styles.title}>Photos</Text>
+          <Text style={styles.subtitle}>
+            {photos.length} photo{photos.length !== 1 ? "s" : ""} ·{" "}
+            {pendingCount} pending review
+          </Text>
+        </View>
+      </AnimatedEntrance>
 
-      {/* Filter toggles */}
-      <View style={styles.filterRow}>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === "all" && styles.filterButtonActive]}
-          onPress={() => setFilter("all")}
-        >
-          <Text style={[styles.filterText, filter === "all" && styles.filterTextActive]}>
-            All ({photos.length})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === "pending" && styles.filterButtonActive]}
-          onPress={() => setFilter("pending")}
-        >
-          <Icon name="pending" size={14} color={filter === "pending" ? "#ffffff" : "#888"} />
-          <Text style={[styles.filterText, filter === "pending" && styles.filterTextActive]}>
-            Pending ({pendingCount})
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.filterButton, filter === "verified" && styles.filterButtonActive]}
-          onPress={() => setFilter("verified")}
-        >
-          <Icon name="check" size={14} color={filter === "verified" ? "#ffffff" : "#888"} />
-          <Text style={[styles.filterText, filter === "verified" && styles.filterTextActive]}>
-            Verified ({verifiedCount})
-          </Text>
-        </TouchableOpacity>
-      </View>
+      {/* Filter pills */}
+      <AnimatedEntrance index={1}>
+        <View style={styles.filterRow}>
+          {FILTERS.map((f) => {
+            const active = filter === f.key;
+            return (
+              <SpringPressable
+                key={f.key}
+                onPress={() => setFilter(f.key)}
+                style={styles.filterFlex}
+              >
+                <View
+                  style={[styles.filterPill, active && styles.filterPillActive]}
+                >
+                  {f.icon ? (
+                    <Icon
+                      name={f.icon}
+                      size={14}
+                      color={active ? "#fff" : colors.fgMuted}
+                    />
+                  ) : null}
+                  <Text
+                    style={[styles.filterText, active && styles.filterTextActive]}
+                  >
+                    {f.label} ({filterCount(f.key)})
+                  </Text>
+                </View>
+              </SpringPressable>
+            );
+          })}
+        </View>
+      </AnimatedEntrance>
 
       {pendingCount > 0 && (
-        <View style={styles.pendingActions}>
-          <TouchableOpacity
-            style={[styles.retryButton, retrying && styles.retryButtonDisabled]}
-            onPress={handleRetryPending}
-            disabled={retrying}
-          >
-            {retrying ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.retryButtonText}>Retry AI Processing For Pending Photos</Text>
-            )}
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.reviewQueueButton}
-            onPress={() => navigation.navigate("FlagQueue")}
-          >
-            <Text style={styles.reviewQueueText}>Open Review Queue</Text>
-          </TouchableOpacity>
-        </View>
+        <AnimatedEntrance index={2}>
+          <View style={styles.pendingActions}>
+            <SpringPressable
+              onPress={handleRetryPending}
+              disabled={retrying}
+              style={[styles.retryButton, retrying && styles.buttonDisabled]}
+            >
+              {retrying ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.retryButtonText}>
+                  Retry AI Processing For Pending Photos
+                </Text>
+              )}
+            </SpringPressable>
+            <SpringPressable
+              onPress={() => navigation.navigate("FlagQueue")}
+              style={styles.reviewQueueButton}
+            >
+              <Text style={styles.reviewQueueText}>Open Review Queue</Text>
+            </SpringPressable>
+          </View>
+        </AnimatedEntrance>
       )}
 
       {photos.length > 0 && (
-        <View style={styles.retagWrapper}>
-          <TouchableOpacity
-            style={[styles.retagButton, retagging && styles.retryButtonDisabled]}
-            onPress={confirmRetagAll}
-            disabled={retagging}
-          >
-            {retagging ? (
-              <ActivityIndicator color="#b388ff" size="small" />
-            ) : (
-              <Text style={styles.retagButtonText}>Re-tag All Photos With AI</Text>
-            )}
-          </TouchableOpacity>
-        </View>
+        <AnimatedEntrance index={3}>
+          <View style={styles.retagWrapper}>
+            <SpringPressable
+              onPress={confirmRetagAll}
+              disabled={retagging}
+              style={[styles.retagButton, retagging && styles.buttonDisabled]}
+            >
+              {retagging ? (
+                <ActivityIndicator color={colors.primarySoft} size="small" />
+              ) : (
+                <Text style={styles.retagButtonText}>Re-tag All Photos With AI</Text>
+              )}
+            </SpringPressable>
+          </View>
+        </AnimatedEntrance>
       )}
 
       {filteredPhotos.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>
-            {filter === "all" ? "No photos imported yet" : `No ${filter} photos`}
-          </Text>
-        </View>
+        <AnimatedEntrance index={4}>
+          <View style={styles.emptyState}>
+            <AliveEmptyState
+              message={filter === "all" ? "No photos imported yet" : `No ${filter} photos`}
+            />
+          </View>
+        </AnimatedEntrance>
       ) : (
         <FlatList
           data={filteredPhotos}
           keyExtractor={(item) => item.id}
-          numColumns={3}
+          numColumns={2}
           contentContainerStyle={styles.grid}
           columnWrapperStyle={styles.row}
-          renderItem={({ item }) => (
+          renderItem={({ item, index }) => (
             <PhotoGridItem
               item={item}
+              index={index}
               userId={userId}
               removeFromList={(id) =>
                 setPhotos((prev) => prev.filter((p) => p.id !== id))
@@ -274,19 +306,23 @@ export default function ViewPhotosScreen({ navigation }: Props) {
         />
       )}
 
-      <TouchableOpacity
-        style={styles.addButton}
+      <SpringPressable
+        bigButton
         onPress={() => navigation.navigate("ImportPhotos")}
+        style={styles.addButton}
       >
-        <Text style={styles.addButtonText}>+ Import More Photos</Text>
-      </TouchableOpacity>
+        <View style={styles.addRow}>
+          <Icon name="add" size={22} color="#fff" accentColor="#fff" />
+          <Text style={styles.addButtonText}>Import More Photos</Text>
+        </View>
+      </SpringPressable>
 
-      <TouchableOpacity
-        style={styles.cancelButton}
+      <SpringPressable
         onPress={() => navigation.goBack()}
+        style={styles.cancelButton}
       >
         <Text style={styles.cancelText}>Back to Dashboard</Text>
-      </TouchableOpacity>
+      </SpringPressable>
       {lightbox}
     </View>
   );
@@ -294,11 +330,13 @@ export default function ViewPhotosScreen({ navigation }: Props) {
 
 function PhotoGridItem({
   item,
+  index,
   userId,
   removeFromList,
   onPress,
 }: {
   item: PhotoItem;
+  index: number;
   userId: string | null;
   removeFromList: (id: string) => void;
   onPress: () => void;
@@ -310,39 +348,37 @@ function PhotoGridItem({
   if (broken) return null;
 
   return (
-    <TouchableOpacity
-      style={styles.photoWrapper}
-      onPress={handlePress}
-      activeOpacity={0.85}
-    >
-      <Image
-        source={{ uri: item.file_url }}
-        style={styles.photo}
-        onError={() => {
-          // Hide this tile from the current render only — do NOT
-          // permanently mark the DB row hidden. Image loads can fail
-          // for transient reasons (network blip, simulator hiccup) and
-          // we don't want to nuke a perfectly good photo on the first
-          // miss. Real `file://` rows are caught earlier by the
-          // `processPhoto` guard and the `repair-broken-photos` script.
-          setBroken(true);
-        }}
-      />
-      <View style={[styles.statusBadge, { backgroundColor: badge.color }]}>
-        <Icon name={badge.name} size={13} color="#ffffff" />
-      </View>
-    </TouchableOpacity>
+    <AnimatedEntrance index={index} cardMode style={styles.tileEntrance}>
+      <SpringPressable cardMode onPress={handlePress} style={styles.photoWrapper}>
+        <Image
+          source={{ uri: item.file_url }}
+          style={styles.photo}
+          onError={() => {
+            // Hide this tile from the current render only — do NOT
+            // permanently mark the DB row hidden. Image loads can fail
+            // for transient reasons (network blip, simulator hiccup) and
+            // we don't want to nuke a perfectly good photo on the first
+            // miss. Real `file://` rows are caught earlier by the
+            // `processPhoto` guard and the `repair-broken-photos` script.
+            setBroken(true);
+          }}
+        />
+        <View style={[styles.statusBadge, { backgroundColor: badge.color }]}>
+          <Icon name={badge.name} size={15} color="#ffffff" />
+        </View>
+      </SpringPressable>
+    </AnimatedEntrance>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
   },
@@ -351,21 +387,26 @@ const styles = StyleSheet.create({
     paddingTop: 80,
     paddingBottom: 16,
   },
-  backText: {
-    color: "#b388ff",
-    fontSize: 16,
-    fontWeight: "600",
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     marginBottom: 16,
   },
+  backText: {
+    color: colors.primarySoft,
+    fontSize: typ.base,
+    fontWeight: typ.weightMedium,
+  },
   title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
+    fontSize: typ.title,
+    fontWeight: typ.weightBold,
+    color: colors.primarySoft,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 16,
-    color: "#888",
+    fontSize: typ.base,
+    color: colors.fgMuted,
   },
   filterRow: {
     flexDirection: "row",
@@ -373,99 +414,97 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     gap: 8,
   },
-  filterButton: {
+  filterFlex: {
     flex: 1,
+  },
+  filterPill: {
     paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#2a2a4a",
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
     flexDirection: "row",
     justifyContent: "center",
     alignItems: "center",
     gap: 5,
   },
-  filterButtonActive: {
-    backgroundColor: "#7c4dff",
+  filterPillActive: {
+    backgroundColor: colors.primary,
   },
   filterText: {
-    fontSize: 12,
-    color: "#888",
-    fontWeight: "600",
+    fontSize: typ.xs,
+    color: colors.fgMuted,
+    fontWeight: typ.weightMedium,
   },
   filterTextActive: {
-    color: "#ffffff",
+    color: colors.fgStrong,
   },
   emptyState: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 32,
-    alignItems: "center",
     marginHorizontal: 40,
-  },
-  emptyText: {
-    color: "#888",
-    fontSize: 16,
   },
   pendingActions: {
     marginHorizontal: 40,
     marginBottom: 10,
   },
   retryButton: {
-    backgroundColor: "#7c4dff",
-    borderRadius: 10,
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
     paddingVertical: 12,
     alignItems: "center",
   },
-  retryButtonDisabled: {
+  buttonDisabled: {
     opacity: 0.7,
   },
   retryButtonText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 14,
+    color: colors.fgStrong,
+    fontWeight: typ.weightMedium,
+    fontSize: typ.sm,
   },
   reviewQueueButton: {
     marginTop: 8,
-    backgroundColor: "#2a2a4a",
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
     paddingVertical: 10,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#7c4dff",
+    borderColor: colors.primary,
   },
   reviewQueueText: {
-    color: "#b388ff",
-    fontWeight: "600",
-    fontSize: 13,
+    color: colors.primarySoft,
+    fontWeight: typ.weightMedium,
+    fontSize: typ.xs,
   },
   retagWrapper: {
     marginHorizontal: 40,
     marginBottom: 10,
   },
   retagButton: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
     paddingVertical: 12,
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#7c4dff",
+    borderColor: colors.primary,
   },
   retagButtonText: {
-    color: "#b388ff",
-    fontWeight: "600",
-    fontSize: 13,
+    color: colors.primarySoft,
+    fontWeight: typ.weightMedium,
+    fontSize: typ.xs,
   },
   grid: {
     paddingHorizontal: 40,
+    paddingBottom: 20,
   },
   row: {
-    gap: 8,
-    marginBottom: 8,
+    gap: 12,
+    marginBottom: 12,
+  },
+  tileEntrance: {
+    flex: 1,
   },
   photoWrapper: {
-    width: PHOTO_SIZE,
-    height: PHOTO_SIZE,
-    borderRadius: 8,
+    aspectRatio: 1,
+    borderRadius: radius.md,
     overflow: "hidden",
+    backgroundColor: colors.surfaceSunk,
   },
   photo: {
     width: "100%",
@@ -473,25 +512,30 @@ const styles = StyleSheet.create({
   },
   statusBadge: {
     position: "absolute",
-    top: 4,
-    right: 4,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    top: 8,
+    right: 8,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     justifyContent: "center",
     alignItems: "center",
   },
   addButton: {
-    backgroundColor: "#7c4dff",
+    backgroundColor: colors.primary,
     paddingVertical: 18,
-    borderRadius: 12,
+    borderRadius: radius.sm,
     alignItems: "center",
     marginHorizontal: 40,
     marginTop: 12,
   },
+  addRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
   addButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: typ.lg,
+    fontWeight: typ.weightMedium,
     color: "#fff",
   },
   cancelButton: {
@@ -500,7 +544,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   cancelText: {
-    fontSize: 16,
-    color: "#888",
+    fontSize: typ.base,
+    color: colors.fgMuted,
   },
 });

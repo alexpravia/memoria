@@ -5,16 +5,28 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Image,
   Alert,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+  runOnJS,
+} from "react-native-reanimated";
+import {
+  AnimatedEntrance,
+  SpringPressable,
+  BrandLoader,
+  AliveEmptyState,
+} from "../../motion/primitives";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { FlagItem } from "../../types";
 import Icon, { IconName } from "../../components/Icon";
-import { colors } from "../../theme";
+import { colors, radius, type } from "../../theme";
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
 
 type Props = {
@@ -36,6 +48,14 @@ interface FlagWithMedia extends FlagItem {
   media?: MediaDetail;
   taggedPeople?: TaggedPerson[];
 }
+
+// Status-fill palette (new hex allowed per spec).
+const STATUS_FILL: Record<string, string> = {
+  approved: "#1b5e20",
+  rejected: "#b71c1c",
+  hidden: "#37474f",
+  pending: "#ffab40",
+};
 
 export default function FlagQueueScreen({ navigation }: Props) {
   const { userId, coUserId } = useAuth();
@@ -203,23 +223,14 @@ export default function FlagQueueScreen({ navigation }: Props) {
     }
   }
 
-  function getStatusStyle(status: string) {
-    switch (status) {
-      case "approved":
-        return styles.statusApproved;
-      case "rejected":
-        return styles.statusRejected;
-      case "hidden":
-        return styles.statusHidden;
-      default:
-        return styles.statusPending;
-    }
+  function getStatusFill(status: string) {
+    return STATUS_FILL[status] || STATUS_FILL.pending;
   }
 
   function getConfidenceLabel(confidence: number) {
-    if (confidence >= 0.9) return { text: "High", color: "#4caf50" };
+    if (confidence >= 0.9) return { text: "High", color: colors.success };
     if (confidence >= 0.7) return { text: "Medium", color: "#ffab40" };
-    return { text: "Low", color: "#ef5350" };
+    return { text: "Low", color: colors.danger };
   }
 
   function renderMediaDetails(flag: FlagWithMedia) {
@@ -274,95 +285,79 @@ export default function FlagQueueScreen({ navigation }: Props) {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
+        <BrandLoader caption="Loading review queue…" />
       </View>
     );
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Back</Text>
-      </TouchableOpacity>
+      <AnimatedEntrance index={0}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backRow}>
+          <Icon name="back" size={22} color={colors.primarySoft} />
+          <Text style={styles.backText}>Back</Text>
+        </TouchableOpacity>
 
-      <Text style={styles.title}>Review Queue</Text>
-      <Text style={styles.subtitle}>
-        Review AI-flagged items before they reach your loved one. Nothing gets through without your approval.
-      </Text>
+        <Text style={styles.title}>Review Queue</Text>
+        <Text style={styles.subtitle}>
+          {pendingFlags.length} item{pendingFlags.length === 1 ? "" : "s"} Memo learned to review
+        </Text>
+      </AnimatedEntrance>
 
       {errorMessage ? (
-        <View style={styles.errorBox}>
-          <Text style={styles.errorText}>{errorMessage}</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={loadFlags}>
-            <Text style={styles.retryText}>Try Again</Text>
-          </TouchableOpacity>
-        </View>
+        <AnimatedEntrance index={1}>
+          <View style={styles.errorBox}>
+            <Text style={styles.errorText}>{errorMessage}</Text>
+            <SpringPressable onPress={loadFlags} style={styles.retryButton}>
+              <Text style={styles.retryText}>Try Again</Text>
+            </SpringPressable>
+          </View>
+        </AnimatedEntrance>
       ) : null}
 
       {/* Pending items */}
       {pendingFlags.length === 0 ? (
-        <View style={styles.emptyContainer}>
-          <View style={styles.emptyIcon}>
-            <Icon name="check" size={48} color={colors.success} />
+        <AnimatedEntrance index={1}>
+          <View style={styles.emptyContainer}>
+            <AliveEmptyState
+              drawCheck
+              message="All caught up"
+              caption="Nothing to review right now."
+              tintColor={colors.success}
+            />
           </View>
-          <Text style={styles.emptyText}>All caught up! No items to review.</Text>
-        </View>
+        </AnimatedEntrance>
       ) : (
-        <>
-          <Text style={styles.sectionTitle}>
-            Needs Review ({pendingFlags.length})
-          </Text>
-          {pendingFlags.map((flag) => (
-            <View key={flag.id} style={styles.flagCard}>
-              <View style={styles.flagHeader}>
-                <Icon name={getTypeIconName(flag.flag_type)} size={20} color={colors.primarySoft} />
-                <View style={styles.flagInfo}>
-                  <Text style={styles.flagType}>{flag.flag_type.toUpperCase()}</Text>
-                  <Text style={styles.flagDescription}>{flag.description}</Text>
-                </View>
-              </View>
-              {renderMediaDetails(flag)}
-              <View style={styles.actionRow}>
-                <TouchableOpacity
-                  style={styles.approveButton}
-                  onPress={() => updateFlag(flag, "approved")}
-                >
-                  <Icon name="check" size={16} color="#ffffff" />
-                  <Text style={styles.actionButtonText}>Approve</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.rejectButton}
-                  onPress={() => updateFlag(flag, "rejected")}
-                >
-                  <Icon name="close" size={16} color="#ffffff" />
-                  <Text style={styles.actionButtonText}>Reject</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.hideButton}
-                  onPress={() => updateFlag(flag, "hidden")}
-                >
-                  <Icon name="hide" size={16} color="#ffffff" />
-                  <Text style={styles.actionButtonText}>Hide</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
+        <View style={styles.cardList}>
+          {pendingFlags.map((flag, index) => (
+            <ReviewCard
+              key={flag.id}
+              index={index}
+              category={flag.flag_type.toUpperCase()}
+              iconName={getTypeIconName(flag.flag_type)}
+              description={flag.description}
+              media={renderMediaDetails(flag)}
+              onApprove={() => updateFlag(flag, "approved")}
+              onReject={() => updateFlag(flag, "rejected")}
+              onHide={() => updateFlag(flag, "hidden")}
+            />
           ))}
-        </>
+        </View>
       )}
 
       {/* Reviewed items */}
       {reviewedFlags.length > 0 && (
         <>
-          <Text style={[styles.sectionTitle, { marginTop: 32 }]}>
+          <Text style={styles.sectionTitle}>
             Previously Reviewed ({reviewedFlags.length})
           </Text>
           {reviewedFlags.map((flag) => (
-            <View key={flag.id} style={[styles.flagCard, styles.flagCardReviewed]}>
-              <View style={styles.flagHeader}>
+            <View key={flag.id} style={[styles.reviewedCard]}>
+              <View style={styles.reviewedHeader}>
                 <Icon name={getTypeIconName(flag.flag_type)} size={20} color={colors.primarySoft} />
-                <View style={styles.flagInfo}>
-                  <Text style={styles.flagDescription}>{flag.description}</Text>
-                  <View style={[styles.statusBadge, getStatusStyle(flag.status)]}>
+                <View style={styles.reviewedInfo}>
+                  <Text style={styles.reviewedDescription}>{flag.description}</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: getStatusFill(flag.status) }]}>
                     <Text style={styles.statusText}>{flag.status}</Text>
                   </View>
                 </View>
@@ -389,6 +384,102 @@ export default function FlagQueueScreen({ navigation }: Props) {
       )}
       {lightbox}
     </ScrollView>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ReviewCard — surface card with uppercase lavender category label, quoted
+// content text, and a 3-button action row. On any action the card animates
+// OUT (opacity→0, translateX→40, scale→.96, collapse) before the real handler
+// runs and removes the row from state.
+// ---------------------------------------------------------------------------
+function ReviewCard({
+  index,
+  category,
+  iconName,
+  description,
+  media,
+  onApprove,
+  onReject,
+  onHide,
+}: {
+  index: number;
+  category: string;
+  iconName: IconName;
+  description: string;
+  media: React.ReactNode;
+  onApprove: () => void;
+  onReject: () => void;
+  onHide: () => void;
+}) {
+  const opacity = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const scale = useSharedValue(1);
+  const collapse = useSharedValue(1);
+
+  const exitStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateX: translateX.value }, { scale: scale.value }],
+  }));
+
+  const wrapperStyle = useAnimatedStyle(() => ({
+    marginBottom: 14 * collapse.value,
+    transform: [{ scaleY: collapse.value }],
+  }));
+
+  function runAction(handler: () => void) {
+    // m-leave: opacity 1→0, x 0→40, scale 1→.96, collapse, ~460ms.
+    const ease = Easing.bezier(0.4, 0, 1, 0.6);
+    opacity.value = withTiming(0, { duration: 460, easing: ease });
+    translateX.value = withTiming(40, { duration: 460, easing: ease });
+    scale.value = withTiming(0.96, { duration: 460, easing: ease });
+    collapse.value = withTiming(0, { duration: 460, easing: ease }, (finished) => {
+      if (finished) runOnJS(handler)();
+    });
+  }
+
+  return (
+    <AnimatedEntrance index={index} cardMode>
+      <Animated.View style={wrapperStyle}>
+        <Animated.View style={[styles.reviewCard, exitStyle]}>
+          <View style={styles.reviewHeader}>
+            <Icon name={iconName} size={18} color={colors.primarySoft} />
+            <Text style={styles.reviewCategory}>{category}</Text>
+          </View>
+          <Text style={styles.reviewText}>“{description}”</Text>
+          {media}
+          <View style={styles.actionRow}>
+            <SpringPressable
+              style={[styles.actionButton, { backgroundColor: STATUS_FILL.approved }]}
+              onPress={() => runAction(onApprove)}
+            >
+              <View style={styles.actionInner}>
+                <Icon name="check" size={16} color="#ffffff" accentColor="#ffffff" />
+                <Text style={styles.actionButtonText}>Approve</Text>
+              </View>
+            </SpringPressable>
+            <SpringPressable
+              style={[styles.actionButton, { backgroundColor: STATUS_FILL.rejected }]}
+              onPress={() => runAction(onReject)}
+            >
+              <View style={styles.actionInner}>
+                <Icon name="close" size={16} color="#ffffff" accentColor="#ffffff" />
+                <Text style={styles.actionButtonText}>Reject</Text>
+              </View>
+            </SpringPressable>
+            <SpringPressable
+              style={[styles.actionButton, { backgroundColor: STATUS_FILL.hidden }]}
+              onPress={() => runAction(onHide)}
+            >
+              <View style={styles.actionInner}>
+                <Icon name="hide" size={16} color="#ffffff" accentColor="#ffffff" />
+                <Text style={styles.actionButtonText}>Hide</Text>
+              </View>
+            </SpringPressable>
+          </View>
+        </Animated.View>
+      </Animated.View>
+    </AnimatedEntrance>
   );
 }
 
@@ -433,129 +524,145 @@ function FlagMediaThumb({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   content: {
-    padding: 40,
-    paddingTop: 80,
-    paddingBottom: 60,
+    paddingHorizontal: 20,
+    paddingTop: 62,
+    paddingBottom: 40,
   },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
+  },
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginBottom: 18,
   },
   backText: {
-    color: "#b388ff",
-    fontSize: 16,
-    marginBottom: 20,
+    color: colors.primarySoft,
+    fontSize: type.base,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
+    fontSize: type.title,
+    fontWeight: type.weightBold,
+    color: colors.fg,
+    marginBottom: 4,
   },
   subtitle: {
-    fontSize: 15,
-    color: "#999",
-    marginBottom: 28,
+    fontSize: type.sm,
+    color: colors.fgMuted,
+    marginBottom: 18,
     lineHeight: 22,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#e0e0e0",
+    fontSize: type.lg,
+    fontWeight: type.weightBold,
+    color: colors.fg,
+    marginTop: 32,
     marginBottom: 12,
   },
   emptyContainer: {
     alignItems: "center",
     marginVertical: 40,
   },
+  cardList: {
+    marginTop: 4,
+  },
   errorBox: {
-    backgroundColor: "#3b1f2a",
-    borderRadius: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
     padding: 12,
     marginBottom: 16,
     borderWidth: 1,
-    borderColor: "#ff6b6b",
+    borderColor: colors.danger,
   },
   errorText: {
-    color: "#ffd6d6",
-    fontSize: 14,
+    color: colors.danger,
+    fontSize: type.sm,
     lineHeight: 20,
   },
   retryButton: {
     marginTop: 10,
     alignSelf: "flex-start",
-    backgroundColor: "#ff6b6b",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    backgroundColor: colors.danger,
+    borderRadius: radius.sm,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
   },
   retryText: {
-    color: "#fff",
-    fontWeight: "600",
-    fontSize: 13,
+    color: colors.fgStrong,
+    fontWeight: type.weightMedium,
+    fontSize: type.xs,
   },
-  emptyIcon: {
-    marginBottom: 12,
-  },
-  emptyText: {
-    color: "#666",
-    fontSize: 16,
-    textAlign: "center",
-  },
-  flagCard: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
+
+  // Review card (pending)
+  reviewCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     padding: 16,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: "#ffab40",
   },
-  flagCardReviewed: {
-    opacity: 0.7,
-    borderLeftColor: "#666",
-  },
-  flagHeader: {
+  reviewHeader: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 8,
   },
-  flagIcon: {
-    fontSize: 24,
-    marginRight: 12,
-    marginTop: 2,
+  reviewCategory: {
+    fontSize: type.xxs,
+    fontWeight: type.weightBold,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: colors.primarySoft,
   },
-  flagInfo: {
+  reviewText: {
+    fontSize: type.base,
+    color: colors.fg,
+    lineHeight: 24,
+    marginBottom: 14,
+  },
+  actionRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  actionButton: {
     flex: 1,
+    paddingVertical: 9,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  flagType: {
-    fontSize: 11,
-    color: "#ffab40",
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: 4,
+  actionInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
   },
-  flagDescription: {
-    fontSize: 16,
-    color: "#e0e0e0",
-    lineHeight: 22,
+  actionButtonText: {
+    color: colors.fgStrong,
+    fontSize: type.xs,
+    fontWeight: type.weightMedium,
   },
+
+  // Media details
   mediaSection: {
-    marginTop: 12,
+    marginTop: -2,
+    marginBottom: 12,
   },
   mediaPreview: {
     width: "100%",
     height: 200,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     marginBottom: 10,
   },
   mediaPreviewSmall: {
     width: "100%",
     height: 120,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     marginTop: 10,
     opacity: 0.8,
   },
@@ -563,16 +670,16 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   aiDetailLabel: {
-    fontSize: 12,
-    color: "#b388ff",
-    fontWeight: "700",
+    fontSize: type.xs,
+    color: colors.primarySoft,
+    fontWeight: type.weightBold,
     letterSpacing: 0.5,
     marginBottom: 4,
     textTransform: "uppercase",
   },
   aiDetailText: {
-    fontSize: 14,
-    color: "#e0e0e0",
+    fontSize: type.sm,
+    color: colors.fg,
     lineHeight: 20,
   },
   personTag: {
@@ -581,8 +688,8 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   personName: {
-    fontSize: 14,
-    color: "#e0e0e0",
+    fontSize: type.sm,
+    color: colors.fg,
     marginRight: 8,
   },
   confidenceBadge: {
@@ -591,50 +698,31 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
   confidenceText: {
-    fontSize: 11,
-    color: "#ffffff",
-    fontWeight: "600",
+    fontSize: type.xxs,
+    color: colors.fgStrong,
+    fontWeight: type.weightMedium,
   },
-  actionRow: {
+
+  // Reviewed (history) card
+  reviewedCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: 16,
+    marginBottom: 12,
+    opacity: 0.7,
+  },
+  reviewedHeader: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 14,
-    gap: 8,
+    alignItems: "flex-start",
+    gap: 12,
   },
-  approveButton: {
+  reviewedInfo: {
     flex: 1,
-    backgroundColor: "#1b5e20",
-    paddingVertical: 10,
-    borderRadius: 8,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
   },
-  rejectButton: {
-    flex: 1,
-    backgroundColor: "#b71c1c",
-    paddingVertical: 10,
-    borderRadius: 8,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-  },
-  hideButton: {
-    flex: 1,
-    backgroundColor: "#37474f",
-    paddingVertical: 10,
-    borderRadius: 8,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-  },
-  actionButtonText: {
-    color: "#ffffff",
-    fontSize: 13,
-    fontWeight: "600",
+  reviewedDescription: {
+    fontSize: type.base,
+    color: colors.fg,
+    lineHeight: 22,
   },
   statusBadge: {
     alignSelf: "flex-start",
@@ -643,22 +731,10 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     marginTop: 6,
   },
-  statusPending: {
-    backgroundColor: "#ffab40",
-  },
-  statusApproved: {
-    backgroundColor: "#1b5e20",
-  },
-  statusRejected: {
-    backgroundColor: "#b71c1c",
-  },
-  statusHidden: {
-    backgroundColor: "#37474f",
-  },
   statusText: {
-    color: "#ffffff",
-    fontSize: 12,
-    fontWeight: "600",
+    color: colors.fgStrong,
+    fontSize: type.xs,
+    fontWeight: type.weightMedium,
     textTransform: "uppercase",
   },
 });

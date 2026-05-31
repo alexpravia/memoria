@@ -2,16 +2,25 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withRepeat,
+  withSequence,
+  Easing,
+  cancelAnimation,
+} from "react-native-reanimated";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import { colors, radius, border, type } from "../../theme";
 import Icon, { IconName } from "../../components/Icon";
+import { AnimatedEntrance, SpringPressable } from "../../motion/primitives";
+import { useIntensity } from "../../motion/IntensityContext";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -38,6 +47,111 @@ const automationIds = {
   emergencyContactSettingsButton: "co-user-home-emergency-contact-settings",
   signOutButton: "co-user-home-sign-out",
 } as const;
+
+// ---------- BreathingBadge ----------
+// Small red count badge that gently breathes (scale 1 ↔ 1.06) when intensity
+// is on, otherwise renders static. Used for the Review Queue pending count.
+function BreathingBadge({ count, testID }: { count: number; testID: string }) {
+  const { on, speed } = useIntensity();
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    if (!on) {
+      scale.value = 1;
+      return;
+    }
+    const dur = 3000 / speed; // base 3 s half-cycle
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.06, { duration: dur, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: dur, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      false
+    );
+    return () => cancelAnimation(scale);
+  }, [on, speed]);
+
+  const aStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={[styles.badge, aStyle]} testID={testID}>
+      <Text style={styles.badgeText}>{count}</Text>
+    </Animated.View>
+  );
+}
+
+// ---------- ActionCard ----------
+// One full-width nav card: rounded-square icon tile + title + subtitle +
+// forward chevron. The hero variant uses a solid purple fill, white text,
+// and a purple glow shadow.
+interface ActionCardProps {
+  icon: IconName;
+  label: string;
+  subtitle?: string;
+  hero?: boolean;
+  badge?: number;
+  onPress: () => void;
+  testID: string;
+  accessibilityLabel: string;
+}
+
+function ActionCard({
+  icon,
+  label,
+  subtitle,
+  hero = false,
+  badge,
+  onPress,
+  testID,
+  accessibilityLabel,
+}: ActionCardProps) {
+  return (
+    <SpringPressable
+      cardMode
+      onPress={onPress}
+      style={[styles.card, hero && styles.cardHero]}
+    >
+      <View
+        testID={testID}
+        accessibilityRole="button"
+        accessibilityLabel={accessibilityLabel}
+        style={styles.cardInner}
+      >
+        <View style={[styles.iconTile, hero && styles.iconTileHero]}>
+          <Icon
+            name={icon}
+            size={26}
+            color={hero ? colors.fgStrong : colors.primarySoft}
+            accentColor={hero ? colors.fgStrong : colors.primary}
+          />
+        </View>
+        <View style={styles.cardText}>
+          <Text style={[styles.cardTitle, hero && styles.cardTitleHero]}>
+            {label}
+          </Text>
+          {subtitle ? (
+            <Text
+              style={[styles.cardSubtitle, hero && styles.cardSubtitleHero]}
+            >
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+        {badge !== undefined && badge > 0 ? (
+          <BreathingBadge count={badge} testID={automationIds.pendingFlagsBadge} />
+        ) : null}
+        <Icon
+          name="forward"
+          size={20}
+          color={hero ? colors.fgStrong : colors.fgMuted}
+        />
+      </View>
+    </SpringPressable>
+  );
+}
 
 export default function CoUserHomeScreen({ navigation }: Props) {
   const { userId, signOut } = useAuth();
@@ -115,6 +229,169 @@ export default function CoUserHomeScreen({ navigation }: Props) {
     await signOut();
   }
 
+  // Build the grouped card model from real data. Each entry preserves its
+  // existing navigation target, testID, and accessibility label.
+  const sections: {
+    label: string;
+    cards: ActionCardProps[];
+  }[] = [
+    {
+      label: "Main",
+      cards: [
+        {
+          icon: "sparkle",
+          label: "Generate Today's Briefing",
+          subtitle: "AI-assembled · ready to review",
+          hero: true,
+          onPress: () => navigation.navigate("BriefingPreview"),
+          testID: automationIds.briefingPreviewButton,
+          accessibilityLabel: "Tomorrow's briefing",
+        },
+        {
+          icon: "photos",
+          label: "Photos",
+          subtitle: `${stats.photos} · ${pendingFlags} pending`,
+          onPress: () => navigation.navigate("ViewPhotos"),
+          testID: automationIds.viewPhotosCard,
+          accessibilityLabel: "Photos overview",
+        },
+        {
+          icon: "contacts",
+          label: "People",
+          subtitle: `${stats.people} people`,
+          onPress: () => navigation.navigate("ViewPeople"),
+          testID: automationIds.viewPeopleCard,
+          accessibilityLabel: "People overview",
+        },
+        {
+          icon: "calendar",
+          label: "Events",
+          subtitle: `${stats.events} this week`,
+          onPress: () => navigation.navigate("ViewEvents"),
+          testID: automationIds.viewEventsCard,
+          accessibilityLabel: "Events overview",
+        },
+        {
+          icon: "notes",
+          label: "Memo's Notes",
+          subtitle: `${stats.lifeFacts} learned facts`,
+          onPress: () => navigation.navigate("AIMemory"),
+          testID: automationIds.aiMemoryButton,
+          accessibilityLabel: "Memo's Notes",
+        },
+        {
+          icon: "review",
+          label: "Review Queue",
+          subtitle: `${pendingFlags} to review`,
+          badge: pendingFlags,
+          onPress: () => navigation.navigate("FlagQueue"),
+          testID: automationIds.reviewQueueButton,
+          accessibilityLabel: "Review queue",
+        },
+        {
+          icon: "safety",
+          label: "Safety & Filters",
+          subtitle: "Sensitivity settings",
+          onPress: () => navigation.navigate("SensitivityFilters"),
+          testID: automationIds.sensitivityFiltersButton,
+          accessibilityLabel: "Sensitivity filters",
+        },
+      ],
+    },
+    {
+      label: "Add",
+      cards: [
+        {
+          icon: "add",
+          label: "Add Life Facts",
+          subtitle: `${stats.lifeFacts} life facts`,
+          onPress: () => navigation.navigate("AddLifeFacts", { userId }),
+          testID: automationIds.addLifeFactsButton,
+          accessibilityLabel: "Add life facts",
+        },
+        {
+          icon: "add",
+          label: "Add People",
+          subtitle: `${stats.people} people`,
+          onPress: () => navigation.navigate("AddPeople", { userId }),
+          testID: automationIds.addPeopleButton,
+          accessibilityLabel: "Add people",
+        },
+        {
+          icon: "add",
+          label: "Add Events",
+          subtitle: `${stats.events} events`,
+          onPress: () => navigation.navigate("AddEvents", { userId }),
+          testID: automationIds.addEventsButton,
+          accessibilityLabel: "Add events",
+        },
+      ],
+    },
+    {
+      label: "Import",
+      cards: [
+        {
+          icon: "contacts",
+          label: "Import Contacts",
+          subtitle: "From this device",
+          onPress: () => navigation.navigate("ImportContacts"),
+          testID: automationIds.importContactsButton,
+          accessibilityLabel: "Import contacts",
+        },
+        {
+          icon: "calendar",
+          label: "Import Calendar",
+          subtitle: "From this device",
+          onPress: () => navigation.navigate("ImportCalendar"),
+          testID: automationIds.importCalendarButton,
+          accessibilityLabel: "Import calendar events",
+        },
+        {
+          icon: "photos",
+          label: "Import Photos",
+          subtitle: "From this device",
+          onPress: () => navigation.navigate("ImportPhotos"),
+          testID: automationIds.importPhotosButton,
+          accessibilityLabel: "Import photos",
+        },
+      ],
+    },
+    {
+      label: "Settings & Tools",
+      cards: [
+        {
+          icon: "notes",
+          label: "Life Facts",
+          subtitle: `${stats.lifeFacts} saved`,
+          onPress: () => navigation.navigate("ViewLifeFacts"),
+          testID: automationIds.viewLifeFactsCard,
+          accessibilityLabel: "Life facts overview",
+        },
+        {
+          icon: "login",
+          label: hasUserLogin ? "Set Up Another User" : "Set Up Their Login",
+          subtitle: hasUserLogin
+            ? "Add another user login"
+            : "Create a login for them",
+          onPress: () => navigation.navigate("SetupUserLogin"),
+          testID: automationIds.setupUserLoginButton,
+          accessibilityLabel: "User login setup",
+        },
+        {
+          icon: "call",
+          label: "Emergency Contact Number",
+          subtitle: "Who to call for help",
+          onPress: () => navigation.navigate("EmergencyContactSettings"),
+          testID: automationIds.emergencyContactSettingsButton,
+          accessibilityLabel: "Emergency contact settings",
+        },
+      ],
+    },
+  ];
+
+  // Flatten so entrance stagger increments continuously across sections.
+  let cardIndex = 0;
+
   return (
     <ScrollView
       style={styles.container}
@@ -123,224 +400,45 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       accessibilityLabel="Co-user dashboard"
       accessibilityHint="Shows dashboard controls for managing the user's experience"
     >
-      <Text style={styles.title}>Helper Dashboard</Text>
-      <Text style={styles.subtitle}>
-        Managing {userName ? userName + "'s" : "your loved one's"} experience
-      </Text>
+      {/* Header */}
+      <AnimatedEntrance index={0}>
+        <Text style={styles.eyebrow}>Helper dashboard</Text>
+        <Text style={styles.title}>
+          {userName ? `${userName}'s Memoria` : "Your Memoria"}
+        </Text>
+      </AnimatedEntrance>
 
-      {/* Stats */}
-      <View style={styles.statsRow}>
-        <TouchableOpacity
-          style={styles.statCard}
-          onPress={() => navigation.navigate("ViewLifeFacts")}
-          testID={automationIds.viewLifeFactsCard}
-          accessibilityRole="button"
-          accessibilityLabel="Life facts overview"
-          accessibilityHint="Opens the saved life facts screen"
-        >
-          <Text style={styles.statNumber}>{stats.lifeFacts}</Text>
-          <Text style={styles.statLabel}>Life Facts</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.statCard}
-          onPress={() => navigation.navigate("ViewPeople")}
-          testID={automationIds.viewPeopleCard}
-          accessibilityRole="button"
-          accessibilityLabel="People overview"
-          accessibilityHint="Opens the saved people screen"
-        >
-          <Text style={styles.statNumber}>{stats.people}</Text>
-          <Text style={styles.statLabel}>People</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.statCard}
-          onPress={() => navigation.navigate("ViewEvents")}
-          testID={automationIds.viewEventsCard}
-          accessibilityRole="button"
-          accessibilityLabel="Events overview"
-          accessibilityHint="Opens the saved events screen"
-        >
-          <Text style={styles.statNumber}>{stats.events}</Text>
-          <Text style={styles.statLabel}>Events</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={styles.statCard}
-          onPress={() => navigation.navigate("ViewPhotos")}
-          testID={automationIds.viewPhotosCard}
-          accessibilityRole="button"
-          accessibilityLabel="Photos overview"
-          accessibilityHint="Opens the saved photos screen"
-        >
-          <Text style={styles.statNumber}>{stats.photos}</Text>
-          <Text style={styles.statLabel}>Photos</Text>
-        </TouchableOpacity>
-      </View>
-
-      {/* Actions */}
-      <TouchableOpacity
-        style={styles.actionButton}
-        onPress={() => navigation.navigate("AddLifeFacts", { userId })}
-        testID={automationIds.addLifeFactsButton}
-        accessibilityRole="button"
-        accessibilityLabel="Add life facts"
-        accessibilityHint="Opens the add life facts screen"
-      >
-        <Text style={styles.actionButtonText}>+ Add Life Facts</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.actionButton}
-        onPress={() => navigation.navigate("AddPeople", { userId })}
-        testID={automationIds.addPeopleButton}
-        accessibilityRole="button"
-        accessibilityLabel="Add people"
-        accessibilityHint="Opens the add people screen"
-      >
-        <Text style={styles.actionButtonText}>+ Add People</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.actionButton}
-        onPress={() => navigation.navigate("AddEvents", { userId })}
-        testID={automationIds.addEventsButton}
-        accessibilityRole="button"
-        accessibilityLabel="Add events"
-        accessibilityHint="Opens the add events screen"
-      >
-        <Text style={styles.actionButtonText}>+ Add Events</Text>
-      </TouchableOpacity>
-
-      {/* Import section */}
-      <Text style={styles.sectionTitle}>Import From Device</Text>
-
-      <TouchableOpacity
-        style={styles.importButton}
-        onPress={() => navigation.navigate("ImportContacts")}
-        testID={automationIds.importContactsButton}
-        accessibilityRole="button"
-        accessibilityLabel="Import contacts"
-        accessibilityHint="Opens the contacts import screen"
-      >
-        <Icon name="contacts" size={18} color={colors.primarySoft} />
-          <Text style={styles.actionButtonText}>Import Contacts</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.importButton}
-        onPress={() => navigation.navigate("ImportCalendar")}
-        testID={automationIds.importCalendarButton}
-        accessibilityRole="button"
-        accessibilityLabel="Import calendar events"
-        accessibilityHint="Opens the calendar import screen"
-      >
-        <Icon name="calendar" size={18} color={colors.primarySoft} />
-          <Text style={styles.actionButtonText}>Import Calendar Events</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.importButton}
-        onPress={() => navigation.navigate("ImportPhotos")}
-        testID={automationIds.importPhotosButton}
-        accessibilityRole="button"
-        accessibilityLabel="Import photos"
-        accessibilityHint="Opens the photos import screen"
-      >
-        <Icon name="photos" size={18} color={colors.primarySoft} />
-          <Text style={styles.actionButtonText}>Import Photos</Text>
-      </TouchableOpacity>
-
-      {/* Safety & Settings */}
-      <Text style={styles.sectionTitle}>Safety & Settings</Text>
-
-      <TouchableOpacity
-        style={styles.safetyButton}
-        onPress={() => navigation.navigate("FlagQueue")}
-        testID={automationIds.reviewQueueButton}
-        accessibilityRole="button"
-        accessibilityLabel="Review queue"
-        accessibilityHint="Opens the pending review queue"
-      >
-        <View style={styles.flagRow}>
-          <Icon name="review" size={18} color={colors.danger} />
-            <Text style={styles.actionButtonText}>Review Queue</Text>
-          {pendingFlags > 0 && (
-            <View style={styles.badge} testID={automationIds.pendingFlagsBadge}>
-              <Text style={styles.badgeText}>{pendingFlags}</Text>
-            </View>
-          )}
+      {sections.map((section) => (
+        <View key={section.label} style={styles.section}>
+          <AnimatedEntrance index={(cardIndex += 1)} cardMode>
+            <Text style={styles.sectionLabel}>{section.label}</Text>
+          </AnimatedEntrance>
+          {section.cards.map((card) => (
+            <AnimatedEntrance
+              key={card.testID}
+              index={(cardIndex += 1)}
+              cardMode
+              style={styles.cardSpacing}
+            >
+              <ActionCard {...card} />
+            </AnimatedEntrance>
+          ))}
         </View>
-      </TouchableOpacity>
+      ))}
 
-      <TouchableOpacity
-        style={styles.safetyButton}
-        onPress={() => navigation.navigate("SensitivityFilters")}
-        testID={automationIds.sensitivityFiltersButton}
-        accessibilityRole="button"
-        accessibilityLabel="Sensitivity filters"
-        accessibilityHint="Opens the sensitivity filters screen"
-      >
-        <Icon name="safety" size={18} color={colors.danger} />
-          <Text style={styles.actionButtonText}>Sensitivity Filters</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.safetyButton}
-        onPress={() => navigation.navigate("AIMemory")}
-        testID={automationIds.aiMemoryButton}
-        accessibilityRole="button"
-        accessibilityLabel="Memo's Notes"
-        accessibilityHint="Opens what Memo remembers about your loved one"
-      >
-        <Icon name="notes" size={18} color={colors.danger} />
-          <Text style={styles.actionButtonText}>Memo's Notes</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.safetyButton}
-        onPress={() => navigation.navigate("BriefingPreview")}
-        testID={automationIds.briefingPreviewButton}
-        accessibilityRole="button"
-        accessibilityLabel="Tomorrow's briefing"
-        accessibilityHint="Generate, review, and approve tomorrow's morning briefing"
-      >
-        <Icon name="calendar" size={18} color={colors.danger} />
-          <Text style={styles.actionButtonText}>Tomorrow's Briefing</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.safetyButton}
-        onPress={() => navigation.navigate("SetupUserLogin")}
-        testID={automationIds.setupUserLoginButton}
-        accessibilityRole="button"
-        accessibilityLabel="User login setup"
-        accessibilityHint="Opens the screen to create or update the user's login"
-      >
-        <Icon name="login" size={18} color={colors.danger} />
-        <Text style={styles.actionButtonText}>{hasUserLogin ? "Set Up Another User" : "Set Up Their Login"}</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.safetyButton}
-        onPress={() => navigation.navigate("EmergencyContactSettings")}
-        testID={automationIds.emergencyContactSettingsButton}
-        accessibilityRole="button"
-        accessibilityLabel="Emergency contact settings"
-        accessibilityHint="Opens emergency contact settings"
-      >
-        <Icon name="call" size={18} color={colors.danger} />
-          <Text style={styles.actionButtonText}>Emergency Contact Number</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.signOutButton}
-        onPress={handleSignOut}
-        testID={automationIds.signOutButton}
-        accessibilityRole="button"
-        accessibilityLabel="Sign out"
-        accessibilityHint="Signs out of the co-user account and returns to login"
-      >
-        <Text style={styles.signOutText}>Sign Out</Text>
-      </TouchableOpacity>
+      {/* Sign out */}
+      <AnimatedEntrance index={(cardIndex += 1)} cardMode style={styles.signOutWrap}>
+        <SpringPressable onPress={handleSignOut} style={styles.signOutButton}>
+          <View
+            testID={automationIds.signOutButton}
+            accessibilityRole="button"
+            accessibilityLabel="Sign out"
+            style={styles.signOutInner}
+          >
+            <Text style={styles.signOutText}>Sign Out</Text>
+          </View>
+        </SpringPressable>
+      </AnimatedEntrance>
     </ScrollView>
   );
 }
@@ -351,103 +449,92 @@ const styles = StyleSheet.create({
     backgroundColor: colors.bg,
   },
   content: {
-    padding: 40,
-    paddingTop: 80,
-    paddingBottom: 60,
+    paddingHorizontal: 22,
+    paddingTop: 64,
+    paddingBottom: 48,
+  },
+
+  // Header
+  eyebrow: {
+    fontSize: type.sm,
+    color: colors.primarySoft,
+    fontWeight: type.weightMedium,
+    letterSpacing: 0.3,
   },
   title: {
     fontSize: type.title,
     fontWeight: type.weightBold,
-    color: colors.primarySoft,
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: type.lg,
     color: colors.fg,
-    marginBottom: 32,
-  },
-  statsRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginBottom: 32,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    padding: 12,
-    alignItems: "center",
-    marginHorizontal: 3,
-  },
-  statNumber: {
-    fontSize: type.h2,
-    fontWeight: type.weightBold,
-    color: colors.primary,
-  },
-  statLabel: {
-    fontSize: type.xxs,
-    color: colors.primarySoft,
     marginTop: 4,
   },
-  actionButton: {
-    backgroundColor: colors.surface,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: radius.sm,
-    marginBottom: 12,
-    borderLeftWidth: border.accent,
-    borderLeftColor: colors.primary,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+
+  // Sections
+  section: {
+    marginTop: 22,
   },
-  actionButtonText: {
-    fontSize: type.lg,
-    color: colors.fg,
+  sectionLabel: {
+    fontSize: type.sm,
     fontWeight: type.weightMedium,
-  },
-  signOutButton: {
-    paddingVertical: 16,
-    alignItems: "center",
-    marginTop: 24,
-  },
-  sectionTitle: {
-    fontSize: type.lg,
-    fontWeight: type.weightBold,
     color: colors.primarySoft,
-    marginTop: 24,
+    letterSpacing: 0.3,
     marginBottom: 12,
   },
-  importButton: {
+  cardSpacing: {
+    marginBottom: 14,
+  },
+
+  // Card
+  card: {
     backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: radius.sm,
-    marginBottom: 12,
-    borderLeftWidth: border.accent,
-    borderLeftColor: colors.primarySoft,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+    paddingHorizontal: 18,
   },
-  safetyButton: {
-    backgroundColor: colors.surface,
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: radius.sm,
-    marginBottom: 12,
-    borderLeftWidth: border.accent,
-    borderLeftColor: colors.danger,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
+  cardHero: {
+    backgroundColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
-  flagRow: {
+  cardInner: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    gap: 16,
+  },
+  iconTile: {
+    width: 46,
+    height: 46,
+    borderRadius: 13,
+    backgroundColor: colors.surfaceSunk,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  iconTileHero: {
+    backgroundColor: "rgba(255,255,255,0.18)",
+  },
+  cardText: {
     flex: 1,
   },
+  cardTitle: {
+    fontSize: type.lg,
+    fontWeight: type.weightMedium,
+    color: colors.fg,
+  },
+  cardTitleHero: {
+    color: colors.fgStrong,
+  },
+  cardSubtitle: {
+    fontSize: type.sm,
+    color: colors.fgMuted,
+    marginTop: 2,
+  },
+  cardSubtitleHero: {
+    color: "rgba(255,255,255,0.8)",
+  },
+
+  // Review badge
   badge: {
     backgroundColor: colors.danger,
     borderRadius: radius.full,
@@ -462,8 +549,24 @@ const styles = StyleSheet.create({
     fontSize: type.xs,
     fontWeight: type.weightBold,
   },
+
+  // Sign out
+  signOutWrap: {
+    marginTop: 18,
+  },
+  signOutButton: {
+    borderWidth: border.thin,
+    borderColor: colors.danger,
+    backgroundColor: "transparent",
+    borderRadius: radius.lg,
+    paddingVertical: 15,
+  },
+  signOutInner: {
+    alignItems: "center",
+  },
   signOutText: {
-    fontSize: type.base,
+    fontSize: type.md,
     color: colors.danger,
+    fontWeight: type.weightMedium,
   },
 });

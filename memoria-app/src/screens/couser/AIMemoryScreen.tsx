@@ -5,14 +5,28 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Alert,
   NativeScrollEvent,
   NativeSyntheticEvent,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  Easing,
+  runOnJS,
+} from "react-native-reanimated";
+import {
+  AnimatedEntrance,
+  SpringPressable,
+  BrandLoader,
+  AliveEmptyState,
+} from "../../motion/primitives";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useAuth } from "../../context/AuthContext";
 import Icon from "../../components/Icon";
+import { useIntensity } from "../../motion/IntensityContext";
+import { colors, radius, type } from "../../theme";
 import {
   listMemoriesForCoUser,
   updateMemoryStatus,
@@ -48,12 +62,112 @@ const KIND_FILTERS: Array<KindFilter> = [
 
 const STATUS_FILTERS: StatusFilter[] = ["all", "active", "pinned", "suppressed"];
 
+const LEAVE_EASE = Easing.bezier(0.4, 0, 1, 0.6);
+
+// ---------- MemoRow ----------
+// A single learned-fact card. When `leaving` flips true the whole row
+// animates OUT (opacity → 0, translateX → 40, vertical collapse) and then
+// calls onLeft() so the parent can drop it from state / reload.
+function MemoRow({
+  m,
+  index,
+  leaving,
+  onLeft,
+  onPinToggle,
+  onSuppressToggle,
+  onDelete,
+}: {
+  m: AssistantMemory;
+  index: number;
+  leaving: boolean;
+  onLeft: () => void;
+  onPinToggle: () => void;
+  onSuppressToggle: () => void;
+  onDelete: () => void;
+}) {
+  const { on, speed } = useIntensity();
+  const isPinned = m.status === "pinned";
+  const isSuppressed = m.status === "suppressed";
+
+  const opacity = useSharedValue(1);
+  const tx = useSharedValue(0);
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    if (!leaving) return;
+    if (!on) {
+      onLeft();
+      return;
+    }
+    const dur = 460 / speed;
+    opacity.value = withTiming(0, { duration: dur, easing: LEAVE_EASE });
+    tx.value = withTiming(40, { duration: dur, easing: LEAVE_EASE });
+    scale.value = withTiming(0.96, { duration: dur, easing: LEAVE_EASE }, (done) => {
+      if (done) runOnJS(onLeft)();
+    });
+  }, [leaving, on, speed]);
+
+  const leaveStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+    transform: [{ translateX: tx.value }, { scale: scale.value }],
+  }));
+
+  return (
+    <AnimatedEntrance index={index} cardMode>
+      <Animated.View
+        style={[
+          styles.card,
+          isSuppressed && styles.cardSuppressed,
+          leaveStyle,
+        ]}
+      >
+        <View style={styles.cardHeader}>
+          <Text style={styles.kindLabel}>{KIND_LABELS[m.kind]}</Text>
+          {isPinned || isSuppressed ? (
+            <View style={styles.statusChip}>
+              <Icon
+                name={isPinned ? "pin" : "block"}
+                size={13}
+                color={colors.fgMuted}
+              />
+              <Text style={styles.statusChipText}>
+                {isPinned ? "Pinned" : "Suppressed"}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+
+        <Text style={styles.contentText}>{m.content}</Text>
+
+        <View style={styles.actionRow}>
+          <SpringPressable style={styles.actionBtn} onPress={onPinToggle}>
+            <Icon name="pin" size={15} color={colors.primarySoft} />
+            <Text style={styles.actionText}>{isPinned ? "Unpin" : "Pin"}</Text>
+          </SpringPressable>
+          <SpringPressable style={styles.actionBtn} onPress={onSuppressToggle}>
+            <Icon name="block" size={15} color={colors.primarySoft} />
+            <Text style={styles.actionText}>
+              {isSuppressed ? "Restore" : "Suppress"}
+            </Text>
+          </SpringPressable>
+          <SpringPressable style={styles.actionBtn} onPress={onDelete}>
+            <Icon name="trash" size={15} color={colors.danger} />
+            <Text style={[styles.actionText, styles.deleteAction]}>Delete</Text>
+          </SpringPressable>
+        </View>
+      </Animated.View>
+    </AnimatedEntrance>
+  );
+}
+
 export default function AIMemoryScreen({ navigation }: Props) {
   const { userId, coUserId } = useAuth();
   const [memories, setMemories] = useState<AssistantMemory[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [kindFilter, setKindFilter] = useState<KindFilter>("all");
+  // Id of a row currently animating out before deletion.
+  const [leavingId, setLeavingId] = useState<string | null>(null);
 
   // Kind-row scroll affordance state
   const kindScrollRef = useRef<ScrollView>(null);
@@ -175,17 +289,24 @@ export default function AIMemoryScreen({ navigation }: Props) {
                 metadata: { kind: m.kind, importance: m.importance, status: m.status },
               });
             }
-            load();
+            // Animate the row out, then reload once it has collapsed.
+            setLeavingId(m.id);
           },
         },
       ]
     );
   }
 
+  // Called by the leaving row once its exit animation completes.
+  const handleRowLeft = useCallback(() => {
+    setLeavingId(null);
+    load();
+  }, [load]);
+
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
+        <BrandLoader caption="Gathering Memo's notes…" />
       </View>
     );
   }
@@ -196,171 +317,113 @@ export default function AIMemoryScreen({ navigation }: Props) {
       contentContainerStyle={styles.content}
       testID="ai-memory-screen"
     >
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Back</Text>
-      </TouchableOpacity>
+      <AnimatedEntrance index={0}>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text style={styles.backText}>← Back</Text>
+        </TouchableOpacity>
 
-      <Text style={styles.title}>Memo's Notes</Text>
-      <Text style={styles.subtitle}>
-        Memo's memories and notes about your loved one.
-      </Text>
+        <Text style={styles.eyebrow}>Helper dashboard</Text>
+        <Text style={styles.title}>Memo's Notes</Text>
+        <Text style={styles.subtitle}>
+          Memo's memories and notes about your loved one.
+        </Text>
 
-      {/* Status filter pills */}
-      <View style={styles.pillRow}>
-        {STATUS_FILTERS.map((s) => (
-          <TouchableOpacity
-            key={s}
-            style={[styles.pill, statusFilter === s && styles.pillActive]}
-            onPress={() => setStatusFilter(s)}
-          >
-            <Text
-              style={[
-                styles.pillText,
-                statusFilter === s && styles.pillTextActive,
-              ]}
-            >
-              {s[0].toUpperCase() + s.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      {/* Kind filter pills (compact second row, with scroll affordances) */}
-      <View style={styles.kindScrollWrap}>
-        <ScrollView
-          ref={kindScrollRef}
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.pillRowKind}
-          onScroll={handleKindScroll}
-          scrollEventThrottle={16}
-          onContentSizeChange={(w) => setKindContentWidth(w)}
-          onLayout={(e) => setKindLayoutWidth(e.nativeEvent.layout.width)}
-        >
-          {KIND_FILTERS.map((k) => (
+        {/* Status filter pills */}
+        <View style={styles.pillRow}>
+          {STATUS_FILTERS.map((s) => (
             <TouchableOpacity
-              key={k}
-              style={[styles.pillKind, kindFilter === k && styles.pillActive]}
-              onPress={() => setKindFilter(k)}
+              key={s}
+              style={[styles.pill, statusFilter === s && styles.pillActive]}
+              onPress={() => setStatusFilter(s)}
             >
               <Text
                 style={[
                   styles.pillText,
-                  kindFilter === k && styles.pillTextActive,
+                  statusFilter === s && styles.pillTextActive,
                 ]}
               >
-                {k === "all" ? "All kinds" : KIND_LABELS[k as MemoryKind]}
+                {s[0].toUpperCase() + s.slice(1)}
               </Text>
             </TouchableOpacity>
           ))}
-        </ScrollView>
+        </View>
 
-        {showLeftArrow && (
-          <TouchableOpacity
-            style={[styles.arrowBtn, styles.arrowLeft]}
-            onPress={() => scrollKindBy(-120)}
-            accessibilityLabel="Scroll filters left"
+        {/* Kind filter pills (compact second row, with scroll affordances) */}
+        <View style={styles.kindScrollWrap}>
+          <ScrollView
+            ref={kindScrollRef}
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.pillRowKind}
+            onScroll={handleKindScroll}
+            scrollEventThrottle={16}
+            onContentSizeChange={(w) => setKindContentWidth(w)}
+            onLayout={(e) => setKindLayoutWidth(e.nativeEvent.layout.width)}
           >
-            <Text style={styles.arrowText}>‹</Text>
-          </TouchableOpacity>
-        )}
-        {showRightArrow && (
-          <TouchableOpacity
-            style={[styles.arrowBtn, styles.arrowRight]}
-            onPress={() => scrollKindBy(120)}
-            accessibilityLabel="Scroll filters right"
-          >
-            <Text style={styles.arrowText}>›</Text>
-          </TouchableOpacity>
-        )}
-      </View>
-
-      {visible.length === 0 ? (
-        <Text style={styles.emptyText}>
-          {memories.length === 0
-            ? "Memo hasn't noted anything yet."
-            : "No memories match this filter."}
-        </Text>
-      ) : (
-        visible.map((m) => {
-          const isRecurring = m.kind === "recurring_question";
-          const isPinned = m.status === "pinned";
-          const isSuppressed = m.status === "suppressed";
-          return (
-            <View
-              key={m.id}
-              style={[
-                styles.card,
-                isRecurring && styles.cardRecurring,
-                isPinned && styles.cardPinned,
-                isSuppressed && styles.cardSuppressed,
-              ]}
-            >
-              <View style={styles.cardHeader}>
+            {KIND_FILTERS.map((k) => (
+              <TouchableOpacity
+                key={k}
+                style={[styles.pillKind, kindFilter === k && styles.pillActive]}
+                onPress={() => setKindFilter(k)}
+              >
                 <Text
                   style={[
-                    styles.kindBadge,
-                    isRecurring && styles.kindBadgeRecurring,
+                    styles.pillText,
+                    kindFilter === k && styles.pillTextActive,
                   ]}
                 >
-                  {KIND_LABELS[m.kind]}
+                  {k === "all" ? "All kinds" : KIND_LABELS[k as MemoryKind]}
                 </Text>
-                <View style={styles.statusBadge}>
-                  {isPinned ? (
-                    <Icon name="pin" size={12} color="#999" />
-                  ) : isSuppressed ? (
-                    <Icon name="block" size={12} color="#999" />
-                  ) : null}
-                  <Text style={styles.statusBadgeText}>
-                    {isPinned ? "Pinned" : isSuppressed ? "Suppressed" : "Active"}
-                  </Text>
-                </View>
-              </View>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
 
-              <Text style={styles.contentText}>{m.content}</Text>
+          {showLeftArrow && (
+            <TouchableOpacity
+              style={[styles.arrowBtn, styles.arrowLeft]}
+              onPress={() => scrollKindBy(-120)}
+              accessibilityLabel="Scroll filters left"
+            >
+              <Text style={styles.arrowText}>‹</Text>
+            </TouchableOpacity>
+          )}
+          {showRightArrow && (
+            <TouchableOpacity
+              style={[styles.arrowBtn, styles.arrowRight]}
+              onPress={() => scrollKindBy(120)}
+              accessibilityLabel="Scroll filters right"
+            >
+              <Text style={styles.arrowText}>›</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+      </AnimatedEntrance>
 
-              <View style={styles.metaRow}>
-                <Text style={styles.importance}>
-                  {"●".repeat(m.importance)}
-                  {"○".repeat(5 - m.importance)}
-                </Text>
-                <Text style={styles.created}>
-                  {new Date(m.created_at).toLocaleDateString()}
-                </Text>
-              </View>
-
-              <View style={styles.actionRow}>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => handlePinToggle(m)}
-                >
-                  <Icon name="pin" size={15} color="#b388ff" />
-                  <Text style={styles.actionText}>
-                    {isPinned ? "Unpin" : "Pin"}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => handleSuppressToggle(m)}
-                >
-                  <Icon name="block" size={15} color="#b388ff" />
-                  <Text style={styles.actionText}>
-                    {isSuppressed ? "Restore" : "Suppress"}
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.actionBtn}
-                  onPress={() => confirmDelete(m)}
-                >
-                  <Icon name="trash" size={15} color="#ff6b6b" />
-                  <Text style={[styles.actionText, styles.deleteAction]}>
-                    Delete
-                  </Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          );
-        })
+      {visible.length === 0 ? (
+        <AnimatedEntrance index={1}>
+          <AliveEmptyState
+            drawCheck
+            message="All caught up"
+            caption={
+              memories.length === 0
+                ? "Memo hasn't noted anything yet."
+                : "No notes match this filter."
+            }
+          />
+        </AnimatedEntrance>
+      ) : (
+        visible.map((m, index) => (
+          <MemoRow
+            key={m.id}
+            m={m}
+            index={index}
+            leaving={leavingId === m.id}
+            onLeft={handleRowLeft}
+            onPinToggle={() => handlePinToggle(m)}
+            onSuppressToggle={() => handleSuppressToggle(m)}
+            onDelete={() => confirmDelete(m)}
+          />
+        ))
       )}
     </ScrollView>
   );
@@ -369,34 +432,40 @@ export default function AIMemoryScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   content: {
-    padding: 40,
-    paddingTop: 80,
+    padding: 20,
+    paddingTop: 64,
     paddingBottom: 60,
   },
   centered: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   backText: {
-    color: "#b388ff",
-    fontSize: 16,
+    color: colors.primarySoft,
+    fontSize: type.base,
     marginBottom: 20,
   },
+  eyebrow: {
+    fontSize: type.sm,
+    color: colors.primarySoft,
+    fontWeight: type.weightMedium,
+    marginBottom: 4,
+  },
   title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#b388ff",
+    fontSize: type.title,
+    fontWeight: type.weightBold,
+    color: colors.fg,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 15,
-    color: "#999",
-    marginBottom: 24,
+    fontSize: type.sm,
+    color: colors.fgMuted,
+    marginBottom: 18,
     lineHeight: 22,
   },
   pillRow: {
@@ -407,7 +476,7 @@ const styles = StyleSheet.create({
   pillRowKind: {
     flexDirection: "row",
     gap: 8,
-    marginBottom: 24,
+    marginBottom: 18,
   },
   kindScrollWrap: {
     position: "relative",
@@ -417,7 +486,7 @@ const styles = StyleSheet.create({
     top: 4,
     width: 28,
     height: 28,
-    borderRadius: 14,
+    borderRadius: radius.md,
     justifyContent: "center",
     alignItems: "center",
     backgroundColor: "rgba(26,26,46,0.85)",
@@ -430,115 +499,82 @@ const styles = StyleSheet.create({
     right: 0,
   },
   arrowText: {
-    color: "#ffffff",
+    color: colors.fgStrong,
     fontSize: 22,
     lineHeight: 24,
-    fontWeight: "600",
+    fontWeight: type.weightMedium,
   },
   pill: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: "#2a2a4a",
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xxl,
   },
   pillKind: {
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: "#2a2a4a",
-    borderRadius: 20,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xxl,
     marginRight: 8,
   },
   pillActive: {
-    backgroundColor: "#7c4dff",
+    backgroundColor: colors.primary,
   },
   pillText: {
-    color: "#b388ff",
-    fontSize: 13,
-    fontWeight: "600",
+    color: colors.primarySoft,
+    fontSize: type.xs,
+    fontWeight: type.weightMedium,
   },
   pillTextActive: {
-    color: "#ffffff",
-  },
-  emptyText: {
-    color: "#666",
-    fontSize: 15,
-    textAlign: "center",
-    marginVertical: 24,
+    color: colors.fgStrong,
   },
   card: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 16,
     marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: "#7c4dff",
-  },
-  cardRecurring: {
-    borderLeftColor: "#ffb74d",
-    backgroundColor: "#3a2f1a",
-  },
-  cardPinned: {
-    borderLeftColor: "#ffd54f",
   },
   cardSuppressed: {
-    opacity: 0.55,
+    opacity: 0.6,
   },
   cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  kindBadge: {
-    fontSize: 11,
-    color: "#b388ff",
-    fontWeight: "700",
+  kindLabel: {
+    fontSize: type.xxs,
+    color: colors.primarySoft,
+    fontWeight: type.weightBold,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },
-  kindBadgeRecurring: {
-    color: "#ffb74d",
-  },
-  statusBadge: {
+  statusChip: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     gap: 5,
   },
-  statusBadgeText: {
-    fontSize: 12,
-    color: "#999",
+  statusChipText: {
+    fontSize: type.xs,
+    color: colors.fgMuted,
     fontStyle: "italic" as const,
   },
   contentText: {
-    fontSize: 16,
-    color: "#e0e0e0",
-    lineHeight: 22,
-    marginBottom: 10,
-  },
-  metaRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 12,
-  },
-  importance: {
-    color: "#ffd54f",
-    fontSize: 14,
-    letterSpacing: 2,
-  },
-  created: {
-    color: "#666",
-    fontSize: 12,
+    fontSize: type.base,
+    color: colors.fg,
+    lineHeight: 23,
+    marginBottom: 14,
   },
   actionRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     gap: 8,
   },
   actionBtn: {
     flex: 1,
     paddingVertical: 10,
-    backgroundColor: "#1a1a2e",
+    paddingHorizontal: 6,
+    backgroundColor: colors.surfaceSunk,
     borderRadius: 8,
     flexDirection: "row" as const,
     justifyContent: "center" as const,
@@ -546,11 +582,11 @@ const styles = StyleSheet.create({
     gap: 5,
   },
   actionText: {
-    color: "#b388ff",
-    fontSize: 13,
-    fontWeight: "600",
+    color: colors.primarySoft,
+    fontSize: type.xs,
+    fontWeight: type.weightMedium,
   },
   deleteAction: {
-    color: "#ff6b6b",
+    color: colors.danger,
   },
 });

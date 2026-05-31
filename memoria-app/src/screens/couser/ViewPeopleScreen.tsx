@@ -5,12 +5,20 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
   Alert,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import {
+  AnimatedEntrance,
+  SpringPressable,
+  BrandLoader,
+  AliveEmptyState,
+} from "../../motion/primitives";
+import { Avatar, ShimmerButton } from "../../motion/ui";
+import Icon from "../../components/Icon";
+import { colors, radius } from "../../theme";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -37,7 +45,6 @@ export default function ViewPeopleScreen({ navigation }: Props) {
     const unsubscribe = navigation.addListener("focus", () => {
       loadPeople();
     });
-
     return unsubscribe;
   }, [navigation, userId]);
 
@@ -85,87 +92,94 @@ export default function ViewPeopleScreen({ navigation }: Props) {
   if (loading) {
     return (
       <View testID="view-people-loading" style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
+        <BrandLoader caption="Loading people…" />
       </View>
     );
   }
 
   return (
     <ScrollView testID="view-people-screen" style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity
-          testID="people-back-button"
-          accessibilityRole="button"
-          accessibilityLabel="Go back from people list"
-          onPress={() => navigation.goBack()}
-        >
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-      </View>
+      <AnimatedEntrance index={0}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            testID="people-back-button"
+            accessibilityRole="button"
+            accessibilityLabel="Go back from people list"
+            onPress={() => navigation.goBack()}
+            style={styles.backButton}
+          >
+            <Icon name="back" size={22} color={colors.primarySoft} />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
 
-      <Text style={styles.title} testID="people-title">People</Text>
-      <Text style={styles.subtitle} testID="people-subtitle">
-        {people.length} {people.length === 1 ? "person" : "people"} saved
-      </Text>
+        <Text style={styles.title} testID="people-title">People</Text>
+        <Text style={styles.subtitle} testID="people-subtitle">
+          {people.length} {people.length === 1 ? "person" : "people"} saved
+        </Text>
+      </AnimatedEntrance>
 
       {people.length === 0 ? (
-        <View testID="people-empty-state" style={styles.emptyState}>
-          <Text style={styles.emptyText}>No people added yet</Text>
-        </View>
+        <AnimatedEntrance index={1}>
+          <View testID="people-empty-state">
+            <AliveEmptyState
+              message="No people yet"
+              caption="Add the people who matter most in your loved one's life."
+            />
+          </View>
+        </AnimatedEntrance>
       ) : (
-        people.map((p, index) => (
-          <View key={p.id} testID={`person-card-${index}`} style={styles.personCard}>
-            <View style={styles.cardHeader}>
-              <Text style={styles.personName}>{p.full_name}</Text>
-              <View style={styles.cardActions}>
-                <TouchableOpacity
-                  testID={`edit-person-${index}`}
+        <>
+          <AnimatedEntrance index={1}>
+            <ShimmerButton
+              icon="addPerson"
+              label="Add a person"
+              onPress={() => navigation.navigate("AddPeople", { userId })}
+              style={styles.addButton}
+            />
+          </AnimatedEntrance>
+
+          {people.map((p, index) => (
+            <AnimatedEntrance key={p.id} index={index + 2} cardMode>
+              <SpringPressable
+                cardMode
+                onPress={() => navigation.navigate("EditPerson", { personId: p.id })}
+                onLongPress={() => confirmDelete(p)}
+                style={styles.personCard}
+              >
+                <View
+                  testID={`person-card-${index}`}
                   accessibilityRole="button"
                   accessibilityLabel={`Edit ${p.full_name}`}
-                  onPress={() => navigation.navigate("EditPerson", { personId: p.id })}
-                  style={styles.editButton}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  style={styles.personRow}
                 >
-                  <Text style={styles.editText}>Edit</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  testID={`delete-person-${index}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Delete ${p.full_name}`}
-                  onPress={() => confirmDelete(p)}
-                  style={styles.deleteButton}
-                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
-                >
-                  <Text style={styles.deleteText}>✕</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-            <Text style={styles.personRelation}>{p.relationship}</Text>
-            {p.key_facts && p.key_facts.length > 0 && (
-              <View style={styles.factsContainer}>
-                {p.key_facts.map((fact, i) => (
-                  <View key={i} style={styles.factChip}>
-                    <Text style={styles.factChipText}>{fact}</Text>
+                  <Avatar initial={p.full_name[0] ?? "?"} seed={p.full_name} />
+                  <View style={styles.personInfo}>
+                    <Text style={styles.personName}>{p.full_name}</Text>
+                    {p.relationship ? (
+                      <Text style={styles.personRelation} numberOfLines={1}>
+                        {p.relationship}
+                      </Text>
+                    ) : null}
                   </View>
-                ))}
-              </View>
-            )}
-            {p.emotional_notes ? (
-              <Text style={styles.emotionalNotes}>{p.emotional_notes}</Text>
-            ) : null}
-          </View>
-        ))
-      )}
 
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => navigation.navigate("AddPeople", { userId })}
-        testID="people-add-more"
-        accessibilityRole="button"
-        accessibilityLabel="Add more people"
-      >
-        <Text style={styles.addButtonText}>+ Add More People</Text>
-      </TouchableOpacity>
+                  <TouchableOpacity
+                    testID={`delete-person-${index}`}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Delete ${p.full_name}`}
+                    onPress={() => confirmDelete(p)}
+                    hitSlop={10}
+                    style={styles.deleteButton}
+                  >
+                    <Icon name="trash" size={18} color={colors.dangerAlt} />
+                  </TouchableOpacity>
+                  <Icon name="forward" size={20} color={colors.fgMuted} />
+                </View>
+              </SpringPressable>
+            </AnimatedEntrance>
+          ))}
+        </>
+      )}
     </ScrollView>
   );
 }
@@ -173,129 +187,74 @@ export default function ViewPeopleScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
   },
   content: {
-    padding: 40,
-    paddingTop: 80,
-    paddingBottom: 60,
+    paddingHorizontal: 20,
+    paddingTop: 62,
+    paddingBottom: 40,
+    gap: 12,
   },
   headerRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   backText: {
-    color: "#b388ff",
+    color: colors.primarySoft,
     fontSize: 16,
     fontWeight: "600",
   },
   title: {
     fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
+    fontWeight: "700",
+    color: colors.fg,
   },
   subtitle: {
-    fontSize: 16,
-    color: "#888",
-    marginBottom: 24,
+    fontSize: 15,
+    color: colors.fgMuted,
+    marginTop: 4,
   },
-  emptyState: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 32,
-    alignItems: "center",
-  },
-  emptyText: {
-    color: "#888",
-    fontSize: 16,
+  addButton: {
+    marginTop: 16,
+    marginBottom: 4,
   },
   personCard: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderLeftWidth: 4,
-    borderLeftColor: "#7c4dff",
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
-  cardHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  cardActions: {
+  personRow: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 14,
   },
-  editButton: {
-    backgroundColor: "#3a3a5a",
-    borderRadius: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    marginRight: 8,
+  personInfo: {
+    flex: 1,
   },
-  editText: {
-    color: "#e0e0e0",
-    fontSize: 12,
+  personName: {
+    fontSize: 18,
     fontWeight: "600",
+    color: colors.fg,
+  },
+  personRelation: {
+    fontSize: 14,
+    color: colors.fgMuted,
+    marginTop: 2,
   },
   deleteButton: {
     padding: 4,
-  },
-  deleteText: {
-    color: "#ff5252",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  personName: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#fff",
-    flex: 1,
-  },
-  personRelation: {
-    fontSize: 15,
-    color: "#b388ff",
-    marginTop: 4,
-  },
-  factsContainer: {
-    marginTop: 10,
-    gap: 6,
-  },
-  factChip: {
-    backgroundColor: "#3a3a5a",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-  },
-  factChipText: {
-    color: "#e0e0e0",
-    fontSize: 14,
-  },
-  emotionalNotes: {
-    fontSize: 14,
-    color: "#888",
-    marginTop: 10,
-    fontStyle: "italic",
-  },
-  addButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  addButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
   },
 });

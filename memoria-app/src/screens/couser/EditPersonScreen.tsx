@@ -13,6 +13,14 @@ import { RouteProp } from "@react-navigation/native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { embedAndStore } from "../../lib/embeddings";
+import {
+  AnimatedEntrance,
+  SpringPressable,
+  BrandLoader,
+} from "../../motion/primitives";
+import { Avatar, ShimmerButton, Switch } from "../../motion/ui";
+import Icon from "../../components/Icon";
+import { colors, radius, type } from "../../theme";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -33,6 +41,13 @@ export default function EditPersonScreen({ navigation, route }: Props) {
   const [keyFacts, setKeyFacts] = useState<string[]>([]);
   const [keyFactInput, setKeyFactInput] = useState("");
 
+  // Presentation-only: which input currently owns the focus glow.
+  const [focusedField, setFocusedField] = useState<string | null>(null);
+  // Presentation-only toggle for the briefing-inclusion row (does not touch save).
+  const [includeInBriefings, setIncludeInBriefings] = useState(true);
+  // Best-effort display name of the linked user, for the header subtitle.
+  const [userName, setUserName] = useState("");
+
   useEffect(() => {
     loadPerson();
   }, [personId]);
@@ -46,7 +61,7 @@ export default function EditPersonScreen({ navigation, route }: Props) {
 
     const { data, error } = await supabase
       .from("people")
-      .select("id, full_name, relationship, key_facts, emotional_notes, contact_info")
+      .select("id, user_id, full_name, relationship, key_facts, emotional_notes, contact_info")
       .eq("id", personId)
       .single();
 
@@ -63,6 +78,21 @@ export default function EditPersonScreen({ navigation, route }: Props) {
     setPhone(data.contact_info?.phone || "");
     setEmail(data.contact_info?.email || "");
     setLoading(false);
+
+    // Best-effort: resolve the linked user's name for the header subtitle.
+    // Fully guarded — any failure is ignored and does not affect the form.
+    if (data.user_id) {
+      try {
+        const { data: u } = await supabase
+          .from("users")
+          .select("name")
+          .eq("id", data.user_id)
+          .single();
+        if (u?.name) setUserName(u.name);
+      } catch {
+        // ignore — subtitle simply omits the user's name
+      }
+    }
   }
 
   function addKeyFact() {
@@ -127,131 +157,249 @@ export default function EditPersonScreen({ navigation, route }: Props) {
   if (loading) {
     return (
       <View testID="edit-person-loading" style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
+        <BrandLoader caption="Loading…" />
       </View>
     );
   }
 
+  // Header subtitle: "{Name} — {user}'s {relationship}".
+  const relLabel = relationship.trim().toLowerCase();
+  const headerName = fullName.trim() || "This person";
+  const subtitle = userName
+    ? `${headerName} — ${userName}'s ${relLabel || "loved one"}`
+    : relLabel
+    ? `${headerName} — ${relLabel}`
+    : headerName;
+
+  const avatarInitial = (fullName.trim()[0] || "?").toUpperCase();
+
+  // Returns the focus-glow style for a given field key.
+  const fieldBox = (key: string) => [
+    styles.fieldBox,
+    focusedField === key && styles.fieldBoxFocused,
+  ];
+
   return (
-    <ScrollView testID="edit-person-screen" style={styles.container} contentContainerStyle={styles.content}>
-      <TouchableOpacity
-        testID="edit-person-back"
-        accessibilityRole="button"
-        accessibilityLabel="Go back from edit person"
-        onPress={() => navigation.goBack()}
-      >
-        <Text style={styles.backText}>← Back</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.title}>Edit Person</Text>
-      <Text style={styles.subtitle}>Update relationship, notes, and contact details.</Text>
-
-      <Text style={styles.label}>Name *</Text>
-      <TextInput
-        testID="edit-person-name"
-        accessibilityLabel="Full name"
-        style={styles.input}
-        value={fullName}
-        onChangeText={setFullName}
-        placeholder="Full name"
-        placeholderTextColor="#888"
-      />
-
-      <Text style={styles.label}>Relationship *</Text>
-      <TextInput
-        testID="edit-person-relationship"
-        accessibilityLabel="Relationship"
-        style={styles.input}
-        value={relationship}
-        onChangeText={setRelationship}
-        placeholder="e.g., Daughter"
-        placeholderTextColor="#888"
-      />
-
-      <Text style={styles.label}>Phone</Text>
-      <TextInput
-        testID="edit-person-phone"
-        accessibilityLabel="Phone"
-        style={styles.input}
-        value={phone}
-        onChangeText={setPhone}
-        placeholder="e.g., (305) 555-0199"
-        placeholderTextColor="#888"
-        keyboardType="phone-pad"
-      />
-
-      <Text style={styles.label}>Email</Text>
-      <TextInput
-        testID="edit-person-email"
-        accessibilityLabel="Email"
-        style={styles.input}
-        value={email}
-        onChangeText={setEmail}
-        placeholder="e.g., maria@email.com"
-        placeholderTextColor="#888"
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
-
-      <Text style={styles.label}>Key Facts</Text>
-      <View style={styles.row}>
-        <TextInput
-          style={[styles.input, styles.rowInput]}
-          value={keyFactInput}
-          onChangeText={setKeyFactInput}
-          placeholder="Add a key fact"
-          placeholderTextColor="#888"
-          onSubmitEditing={addKeyFact}
-          testID="edit-person-keyfact-input"
-          accessibilityLabel="Add a key fact"
-        />
-        <TouchableOpacity
-          style={styles.addFactButton}
-          onPress={addKeyFact}
-          testID="edit-person-keyfact-add"
-          accessibilityRole="button"
-          accessibilityLabel="Add key fact"
+    <ScrollView
+      testID="edit-person-screen"
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      <AnimatedEntrance index={0}>
+        <SpringPressable
+          onPress={() => navigation.goBack()}
+          style={styles.backButton}
         >
-          <Text style={styles.addFactButtonText}>+</Text>
-        </TouchableOpacity>
-      </View>
-
-      {keyFacts.map((fact, index) => (
-        <View key={`${fact}-${index}`} style={styles.factRow}>
-          <Text style={styles.factText}>{fact}</Text>
-          <TouchableOpacity
-            testID={`edit-person-keyfact-remove-${index}`}
+          <View
+            testID="edit-person-back"
             accessibilityRole="button"
-            accessibilityLabel={`Remove key fact ${index + 1}`}
-            onPress={() => removeKeyFact(index)}
+            accessibilityLabel="Go back from edit person"
+            style={styles.backInner}
           >
-            <Text style={styles.factRemove}>✕</Text>
-          </TouchableOpacity>
+            <Icon name="back" size={22} color={colors.primarySoft} />
+            <Text style={styles.backText}>Back</Text>
+          </View>
+        </SpringPressable>
+
+        <Text style={styles.title}>Edit Person</Text>
+        <Text style={styles.subtitle}>{subtitle}</Text>
+      </AnimatedEntrance>
+
+      <AnimatedEntrance index={1}>
+        <View style={styles.avatarWrap}>
+          <Avatar initial={avatarInitial} seed={headerName} size={84} />
         </View>
-      ))}
+      </AnimatedEntrance>
 
-      <Text style={styles.label}>Emotional Notes</Text>
-      <TextInput
-        testID="edit-person-notes"
-        accessibilityLabel="Emotional notes"
-        style={[styles.input, styles.notesInput]}
-        value={emotionalNotes}
-        onChangeText={setEmotionalNotes}
-        placeholder="Warm details that help with memory and comfort"
-        placeholderTextColor="#888"
-        multiline
-      />
+      {/* Name */}
+      <AnimatedEntrance index={2}>
+        <View style={styles.field}>
+          <Text style={styles.label}>Name</Text>
+          <View style={fieldBox("name")}>
+            <TextInput
+              testID="edit-person-name"
+              accessibilityLabel="Full name"
+              style={styles.input}
+              value={fullName}
+              onChangeText={setFullName}
+              placeholder="Full name"
+              placeholderTextColor={colors.fgMuted}
+              onFocus={() => setFocusedField("name")}
+              onBlur={() => setFocusedField(null)}
+            />
+          </View>
+        </View>
+      </AnimatedEntrance>
 
-      <TouchableOpacity
-        testID="edit-person-save"
-        accessibilityRole="button"
-        accessibilityLabel="Save person changes"
-        style={[styles.saveButton, saving && styles.saveButtonDisabled]}
-        onPress={savePerson}
-        disabled={saving}
-      >
-        {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveButtonText}>Save Changes</Text>}
-      </TouchableOpacity>
+      {/* Relationship */}
+      <AnimatedEntrance index={3}>
+        <View style={styles.field}>
+          <Text style={styles.label}>Relationship</Text>
+          <View style={fieldBox("relationship")}>
+            <TextInput
+              testID="edit-person-relationship"
+              accessibilityLabel="Relationship"
+              style={styles.input}
+              value={relationship}
+              onChangeText={setRelationship}
+              placeholder="e.g., Daughter"
+              placeholderTextColor={colors.fgMuted}
+              onFocus={() => setFocusedField("relationship")}
+              onBlur={() => setFocusedField(null)}
+            />
+          </View>
+        </View>
+      </AnimatedEntrance>
+
+      {/* Phone */}
+      <AnimatedEntrance index={4}>
+        <View style={styles.field}>
+          <Text style={styles.label}>Phone</Text>
+          <View style={fieldBox("phone")}>
+            <TextInput
+              testID="edit-person-phone"
+              accessibilityLabel="Phone"
+              style={styles.input}
+              value={phone}
+              onChangeText={setPhone}
+              placeholder="e.g., (305) 555-0199"
+              placeholderTextColor={colors.fgMuted}
+              keyboardType="phone-pad"
+              onFocus={() => setFocusedField("phone")}
+              onBlur={() => setFocusedField(null)}
+            />
+          </View>
+        </View>
+      </AnimatedEntrance>
+
+      {/* Email */}
+      <AnimatedEntrance index={5}>
+        <View style={styles.field}>
+          <Text style={styles.label}>Email</Text>
+          <View style={fieldBox("email")}>
+            <TextInput
+              testID="edit-person-email"
+              accessibilityLabel="Email"
+              style={styles.input}
+              value={email}
+              onChangeText={setEmail}
+              placeholder="e.g., maria@email.com"
+              placeholderTextColor={colors.fgMuted}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              onFocus={() => setFocusedField("email")}
+              onBlur={() => setFocusedField(null)}
+            />
+          </View>
+        </View>
+      </AnimatedEntrance>
+
+      {/* Key Facts */}
+      <AnimatedEntrance index={6}>
+        <View style={styles.field}>
+          <Text style={styles.label}>Key Facts</Text>
+          <View style={styles.row}>
+            <View style={[fieldBox("keyfact"), styles.rowInputBox]}>
+              <TextInput
+                style={styles.input}
+                value={keyFactInput}
+                onChangeText={setKeyFactInput}
+                placeholder="Add a key fact"
+                placeholderTextColor={colors.fgMuted}
+                onSubmitEditing={addKeyFact}
+                testID="edit-person-keyfact-input"
+                accessibilityLabel="Add a key fact"
+                onFocus={() => setFocusedField("keyfact")}
+                onBlur={() => setFocusedField(null)}
+              />
+            </View>
+            <SpringPressable onPress={addKeyFact} style={styles.addFactButton}>
+              <View
+                testID="edit-person-keyfact-add"
+                accessibilityRole="button"
+                accessibilityLabel="Add key fact"
+                style={styles.addFactInner}
+              >
+                <Icon name="add" size={24} color="#fff" accentColor="#fff" />
+              </View>
+            </SpringPressable>
+          </View>
+
+          {keyFacts.map((fact, index) => (
+            <View key={`${fact}-${index}`} style={styles.factRow}>
+              <Text style={styles.factText}>{fact}</Text>
+              <SpringPressable onPress={() => removeKeyFact(index)}>
+                <View
+                  testID={`edit-person-keyfact-remove-${index}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Remove key fact ${index + 1}`}
+                  style={styles.factRemoveBtn}
+                >
+                  <Icon name="close" size={16} color={colors.danger} />
+                </View>
+              </SpringPressable>
+            </View>
+          ))}
+        </View>
+      </AnimatedEntrance>
+
+      {/* Emotional Notes */}
+      <AnimatedEntrance index={7}>
+        <View style={styles.field}>
+          <Text style={styles.label}>How they're connected</Text>
+          <View style={[fieldBox("notes"), styles.notesBox]}>
+            <TextInput
+              testID="edit-person-notes"
+              accessibilityLabel="Emotional notes"
+              style={[styles.input, styles.notesInput]}
+              value={emotionalNotes}
+              onChangeText={setEmotionalNotes}
+              placeholder="Warm details that help with memory and comfort"
+              placeholderTextColor={colors.fgMuted}
+              multiline
+              onFocus={() => setFocusedField("notes")}
+              onBlur={() => setFocusedField(null)}
+            />
+          </View>
+        </View>
+      </AnimatedEntrance>
+
+      {/* Include in daily briefings */}
+      <AnimatedEntrance index={8}>
+        <View style={styles.toggleRow}>
+          <View style={styles.toggleText}>
+            <Text style={styles.toggleTitle}>Include in daily briefings</Text>
+            <Text style={styles.toggleSub}>
+              {`Memo will mention ${headerName} in ${
+                userName ? `${userName}'s` : "the"
+              } morning briefing.`}
+            </Text>
+          </View>
+          <Switch
+            value={includeInBriefings}
+            onToggle={() => setIncludeInBriefings((b) => !b)}
+          />
+        </View>
+      </AnimatedEntrance>
+
+      {/* Save */}
+      <AnimatedEntrance index={9}>
+        <ShimmerButton hero disabled={saving} onPress={savePerson} style={styles.saveButton}>
+          <View
+            testID="edit-person-save"
+            accessibilityRole="button"
+            accessibilityLabel="Save person changes"
+            style={styles.saveInner}
+          >
+            {saving ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.saveButtonText}>Save changes</Text>
+            )}
+          </View>
+        </ShimmerButton>
+      </AnimatedEntrance>
     </ScrollView>
   );
 }
@@ -259,110 +407,167 @@ export default function EditPersonScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   content: {
-    padding: 40,
-    paddingTop: 80,
+    padding: 24,
+    paddingTop: 72,
     paddingBottom: 60,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
   },
-  backText: {
-    color: "#b388ff",
-    fontSize: 16,
-    fontWeight: "600",
+  backButton: {
+    alignSelf: "flex-start",
     marginBottom: 16,
   },
+  backInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  backText: {
+    color: colors.primarySoft,
+    fontSize: type.base,
+    fontWeight: type.weightMedium,
+  },
   title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
+    fontSize: type.title,
+    fontWeight: type.weightBold,
+    color: colors.primarySoft,
+    marginBottom: 6,
   },
   subtitle: {
-    color: "#e0e0e0",
-    fontSize: 16,
-    marginBottom: 24,
+    color: colors.fg,
+    fontSize: type.base,
+  },
+  avatarWrap: {
+    alignItems: "center",
+    marginTop: 22,
+    marginBottom: 22,
+  },
+  field: {
+    marginBottom: 16,
   },
   label: {
-    fontSize: 14,
-    color: "#b388ff",
-    marginBottom: 6,
-    fontWeight: "600",
+    fontSize: 12.5,
+    color: colors.primarySoft,
+    marginBottom: 7,
+    fontWeight: type.weightBold,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+  },
+  fieldBox: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    borderWidth: 2,
+    borderColor: "transparent",
+    paddingHorizontal: 16,
+    paddingVertical: 2,
+  },
+  fieldBoxFocused: {
+    backgroundColor: colors.surfaceRaised,
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
   },
   input: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    color: "#fff",
-    marginBottom: 14,
+    fontSize: 17,
+    color: colors.fgStrong,
+    paddingVertical: 13,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
+    gap: 10,
   },
-  rowInput: {
+  rowInputBox: {
     flex: 1,
-    marginBottom: 0,
-    marginRight: 10,
   },
   addFactButton: {
-    backgroundColor: "#7c4dff",
-    width: 46,
-    height: 46,
-    borderRadius: 10,
+    backgroundColor: colors.primary,
+    width: 52,
+    height: 52,
+    borderRadius: radius.sm,
+  },
+  addFactInner: {
+    width: 52,
+    height: 52,
     justifyContent: "center",
     alignItems: "center",
   },
-  addFactButtonText: {
-    color: "#fff",
-    fontSize: 24,
-    fontWeight: "bold",
-  },
   factRow: {
-    backgroundColor: "#3a3a5a",
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 6,
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.sm,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginTop: 8,
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
   },
   factText: {
-    color: "#e0e0e0",
-    fontSize: 14,
+    color: colors.fg,
+    fontSize: type.sm,
     flex: 1,
     paddingRight: 10,
   },
-  factRemove: {
-    color: "#ff6b6b",
-    fontWeight: "700",
+  factRemoveBtn: {
+    width: 28,
+    height: 28,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  notesBox: {
+    paddingVertical: 12,
   },
   notesInput: {
-    minHeight: 90,
+    minHeight: 84,
     textAlignVertical: "top",
+    paddingVertical: 0,
+    lineHeight: 22,
+  },
+  toggleRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    marginBottom: 16,
+    marginTop: 4,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  toggleText: {
+    flex: 1,
+  },
+  toggleTitle: {
+    fontSize: 16.5,
+    fontWeight: type.weightMedium,
+    color: colors.fg,
+  },
+  toggleSub: {
+    fontSize: type.xs,
+    color: colors.fgMuted,
+    marginTop: 3,
+    lineHeight: 18,
   },
   saveButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 12,
+    marginTop: 8,
   },
-  saveButtonDisabled: {
-    opacity: 0.7,
+  saveInner: {
+    alignItems: "center",
+    justifyContent: "center",
   },
   saveButtonText: {
     color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: type.lg,
+    fontWeight: type.weightMedium,
   },
 });

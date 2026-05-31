@@ -5,11 +5,19 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  ActivityIndicator,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
+import {
+  AnimatedEntrance,
+  SpringPressable,
+  BrandLoader,
+  AliveEmptyState,
+} from "../../motion/primitives";
+import { ShimmerButton } from "../../motion/ui";
+import Icon from "../../components/Icon";
+import { colors, radius } from "../../theme";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -45,41 +53,62 @@ export default function ViewLifeFactsScreen({ navigation }: Props) {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
+        <BrandLoader caption="Loading life facts…" />
       </View>
     );
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-      </View>
+      <AnimatedEntrance index={0}>
+        <View style={styles.headerRow}>
+          <TouchableOpacity
+            onPress={() => navigation.goBack()}
+            style={styles.backBtn}
+            hitSlop={10}
+          >
+            <Icon name="back" size={20} color={colors.primarySoft} />
+            <Text style={styles.backText}>Back</Text>
+          </TouchableOpacity>
+        </View>
 
-      <Text style={styles.title}>Life Facts</Text>
-      <Text style={styles.subtitle}>{facts.length} fact{facts.length !== 1 ? "s" : ""} saved</Text>
+        <Text style={styles.eyebrow}>Helper dashboard</Text>
+        <Text style={styles.title}>Life Facts</Text>
+        <Text style={styles.subtitle}>
+          {facts.length} fact{facts.length !== 1 ? "s" : ""} saved
+        </Text>
+      </AnimatedEntrance>
 
       {facts.length === 0 ? (
-        <View style={styles.emptyState}>
-          <Text style={styles.emptyText}>No life facts added yet</Text>
-        </View>
+        <AnimatedEntrance index={1}>
+          <AliveEmptyState
+            message="No life facts added yet"
+            caption="Add important details your loved one should know about their life."
+          />
+        </AnimatedEntrance>
       ) : (
-        facts.map((f, index) => (
-          <View key={f.id} style={styles.factCard}>
-            <Text style={styles.factNumber}>{index + 1}</Text>
-            <Text style={styles.factText}>{f.fact}</Text>
-          </View>
-        ))
+        <View style={styles.list}>
+          {facts.map((f, index) => (
+            <AnimatedEntrance key={f.id} index={index} cardMode>
+              <SpringPressable cardMode>
+                <View style={styles.factCard}>
+                  <Text style={styles.factLabel}>Life fact</Text>
+                  <Text style={styles.factText}>{f.fact}</Text>
+                </View>
+              </SpringPressable>
+            </AnimatedEntrance>
+          ))}
+        </View>
       )}
 
-      <TouchableOpacity
-        style={styles.addButton}
-        onPress={() => navigation.navigate("AddLifeFacts", { userId })}
-      >
-        <Text style={styles.addButtonText}>+ Add More Life Facts</Text>
-      </TouchableOpacity>
+      <AnimatedEntrance index={Math.max(facts.length, 1) + 1} style={styles.addWrap}>
+        <ShimmerButton
+          hero
+          icon="add"
+          label="Add More Life Facts"
+          onPress={() => navigation.navigate("AddLifeFacts", { userId })}
+        />
+      </AnimatedEntrance>
     </ScrollView>
   );
 }
@@ -87,83 +116,74 @@ export default function ViewLifeFactsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
   },
   content: {
-    padding: 40,
-    paddingTop: 80,
+    padding: 20,
+    paddingTop: 64,
     paddingBottom: 60,
   },
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 16,
+    marginBottom: 12,
+  },
+  backBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   backText: {
-    color: "#b388ff",
+    color: colors.primarySoft,
     fontSize: 16,
+    fontWeight: "600",
+  },
+  eyebrow: {
+    fontSize: 15,
+    color: colors.primarySoft,
     fontWeight: "600",
   },
   title: {
     fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
+    fontWeight: "700",
+    color: colors.fg,
+    marginTop: 4,
+    marginBottom: 4,
   },
   subtitle: {
     fontSize: 16,
-    color: "#888",
-    marginBottom: 24,
+    color: colors.fgMuted,
+    marginBottom: 18,
   },
-  emptyState: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 32,
-    alignItems: "center",
-  },
-  emptyText: {
-    color: "#888",
-    fontSize: 16,
+  list: {
+    gap: 12,
   },
   factCard: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 16,
-    marginBottom: 10,
-    flexDirection: "row",
-    alignItems: "center",
-    borderLeftWidth: 4,
-    borderLeftColor: "#7c4dff",
   },
-  factNumber: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#7c4dff",
-    marginRight: 14,
-    minWidth: 24,
+  factLabel: {
+    fontSize: 11,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: colors.primarySoft,
+    fontWeight: "700",
+    marginBottom: 8,
   },
   factText: {
     fontSize: 16,
-    color: "#e0e0e0",
-    flex: 1,
+    lineHeight: 23,
+    color: colors.fg,
   },
-  addButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
+  addWrap: {
     marginTop: 20,
-  },
-  addButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
   },
 });

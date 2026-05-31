@@ -183,3 +183,39 @@ A centralized design token file was added at `src/theme.ts`, replacing the hardc
 - Keep testing the end-to-end Phase 1 experience and polishing — co-user onboarding, photo import, AI re-tag, briefing generation/approval/delivery, assistant chat with photos and memory, sensitivity classifier, emergency card
 - Surface any remaining bugs and patch them with root-cause discipline before moving forward
 - Do not begin Phase 2 ("Tell Me About Your Day" — voice journaling, recall exercises, mood/tone awareness) until everything in Phase 1 feels solid
+
+---
+
+## May 30–31, 2026
+
+### AI-Native RAG Upgrade (Phases 1–4 of LLM-plan.md)
+
+A resource atlas of top-tier LLM-engineering references was analyzed and distilled into `LLM-plan.md`, a deeply-reasoned, codebase-specific roadmap for making Memoria's AI genuinely AI-native. Phases 1–4 of that plan were implemented in one session, each kept behind the `npx tsc --noEmit && npm test` gate (now 132 unit tests) and validated by a multi-agent adversarial review.
+
+**Retrieval & embeddings.** Photo embeddings were enriched to fold the AI tags and identified people's names into the embedded text (`buildPhotoEmbedText`), not just the description — so a photo tagged "beach"/"sunset" is now retrievable by a "beach photo" query even when the prose never says it; `scripts/reembed-media-rich.ts` backfills pre-existing photos. The `match_memories` RPC gained a `p_min_similarity` floor (wrapped UNION, backward-compatible 5th param) to cut low-relevance noise. A hybrid-retrieval RPC, `match_memories_hybrid`, was added: dense vector search fused with BM25-style Postgres full-text search via Reciprocal Rank Fusion, with generated `tsvector` columns on media/life_facts/people/events. The dense arm honors the similarity floor; the lexical arm (exact names, dates, tags) is never floored.
+
+**Assistant (`ask-assistant`).** Dynamic tool selection narrows the read tools by question type while always offering the write/safety tools; tool results are clamped to bound context growth. Two post-generation safety gates were added — a groundedness check (an unsupported answer is suppressed to a safe fallback and flagged, because a hallucinated family fact told to a dementia patient is a safety issue) and an output sensitivity re-check — both fail-open. Final-answer persistence was moved past the gates so a suppressed answer never enters stored history. Per-tool-call traces persist to a new `conversation_traces` table.
+
+**Structured Outputs.** `process-photo` and `generate-briefing` were migrated from prompt-instructed JSON to strict JSON-schema Structured Outputs, eliminating silent parse failures (and the spurious review-queue entries they caused); a `BRIEFING_LLM_MODEL` env var allows a stronger model for the async briefing path.
+
+**Memory & evaluation.** A `preference_signals` table plus `logPreferenceSignal` capture implicit co-user feedback (memory pin/suppress/delete, briefing approve/regenerate/edit) as future fine-tuning data. The assistant-quality eval was expanded 15 → 50 cases (including groundedness guards), and a `rag-metrics` integration test measures retrieval recall@N and deterministic answer-assertion pass-rate against the canonical seeded fixture.
+
+**Review.** A multi-agent adversarial pass confirmed the SQL, Structured Outputs, and client/test changes and surfaced one real defect — `selectTools` had been stranding the write/safety tools on narrowed turns — which was fixed so `remember_about_user` and `flag_for_co_user` are always offered.
+
+### Production Deployment & Migration Hurdles
+
+All four SQL migrations were applied to the live project and the three changed Edge Functions deployed (ask-assistant v10, process-photo v6, generate-briefing v4); existing photos were re-embedded with rich text. Hurdles worked through: a migration was first run against the wrong Supabase project (harmless — it only defines a function and rolled back on the missing-table error); the hybrid migration hit `54000: maintenance_work_mem` because adding a STORED generated column rewrites the table and rebuilds the 1536-dim IVFFlat index (fixed with `set maintenance_work_mem = '256MB'`); it then hit `42P17: generation expression is not immutable` because Postgres treats the `'english'` regconfig coercion, `array_to_string`, and `jsonb::text` as merely STABLE (resolved by wrapping each table's tsvector expression in an `IMMUTABLE` SQL function). The Supabase CLI was run via `npx` (no Homebrew / Command-Line-Tools needed).
+
+### Local App Fix — Expo SDK 54 Dependency Alignment
+
+The app stopped loading locally with a Hermes `SyntaxError: private properties are not supported`. Root cause: `babel-preset-expo` had drifted to v56 while SDK 54 expects ~54.0.10, so `react-native-svg`'s `#private` fields reached Hermes untranspiled; pinning `babel-preset-expo@~54.0.10` (54.0.11) fixed it. That surfaced a second crash — `Exception in HostFunction` from `NativeReanimated` — because the JS had `react-native-reanimated@3.16.7` (SDK 53) while Expo Go for SDK 54 ships reanimated 4 natively; resolved by upgrading to `react-native-reanimated@~4.1.1` + `react-native-worklets@0.5.1` and swapping the Babel plugin to `react-native-worklets/plugin` (where reanimated 4 moved it).
+
+### Design & Motion System (parallel session)
+
+In parallel, a design/motion system was integrated: a `src/motion/` module (`IntensityContext`, `primitives`, `ui`), a `Logo` component, and design-handoff assets, with edits across many screens. Authored in a separate session; type-checks and unit tests pass.
+
+### Flags for Next Session
+- **Security:** the Supabase `service_role` key was pasted into a tool chat during deployment — rotate it (Settings → API / reset JWT secret) and update the anon key in `src/lib/supabase.ts`.
+- Verify the reanimated 4 upgrade at runtime — confirm briefing slide-in animations still behave; v3→v4 changes a few APIs.
+- Remaining SDK-54 version drift is still unaligned (`expo` 54.0.33 vs 54.0.35, `expo-asset`, `expo-image-picker`, `expo-notifications`, `@types/react` 18 vs 19, `typescript` 5.7 vs 5.9) — realign deliberately with `npx expo install --fix -- --legacy-peer-deps`, testing after.
+- Phase 5 of `LLM-plan.md` is intentionally paused: facial recognition first (AWS Rekognition — the GPT people-ID is a stub the `media_people` schema is ready to receive), then key_facts chunking, LLM re-ranking, memory consolidation, and the document pipeline.

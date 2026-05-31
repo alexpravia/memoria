@@ -4,10 +4,19 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   Image,
-  Animated,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  withRepeat,
+  withSequence,
+  withDelay,
+  Easing,
+  cancelAnimation,
+} from "react-native-reanimated";
+import { LinearGradient } from "expo-linear-gradient";
 import * as tts from "../../lib/tts";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
@@ -20,6 +29,14 @@ import {
   markDelivered,
   type BriefingSlide as AIBriefingSlide,
 } from "../../lib/briefing";
+import {
+  BrandLoader,
+  AliveEmptyState,
+  SpringPressable,
+} from "../../motion/primitives";
+import { ShimmerButton } from "../../motion/ui";
+import { useIntensity } from "../../motion/IntensityContext";
+import { colors, radius } from "../../theme";
 
 interface BriefingSlide {
   text: string;
@@ -30,9 +47,6 @@ interface BriefingSlide {
   ttsOverride?: string;
 }
 
-// Map an AI-generated slide into the legacy renderer shape so the
-// existing animation / navigation pipeline stays untouched. The TTS
-// path picks up `ttsOverride` to read the model's narration verbatim.
 function mapAISlide(s: AIBriefingSlide): BriefingSlide {
   return {
     text: s.title,
@@ -42,12 +56,6 @@ function mapAISlide(s: AIBriefingSlide): BriefingSlide {
   };
 }
 
-// Fill in `photo_url` for slides whose kind suggests a photo
-// (greeting / person / memory_photo) but where the AI omitted one or
-// where it points at a non-http (file://, etc.) URL we cannot render.
-// Pool entries are reused round-robin; if the pool is empty we fall
-// back to the user's profile photo. Non-http URLs are stripped so the
-// renderer can return null cleanly.
 function backfillPhotos(
   slides: AIBriefingSlide[],
   pool: string[],
@@ -75,18 +83,180 @@ function backfillPhotos(
   });
 }
 
+// ---------- KenBurnsPhoto ----------
+// Slow zoom + pan while the slide is displayed. A soft warm light-leak sits
+// over the photo (matching the prototype's grain/light overlay). The Ken
+// Burns transform resets on every slide change and slowly drifts.
+
+function KenBurnsPhoto({
+  uri,
+  onTap,
+}: {
+  uri: string;
+  onTap: () => void;
+}) {
+  const { on, speed } = useIntensity();
+  const handlePress = useTapToOpen(onTap);
+  const [broken, setBroken] = useState(false);
+
+  const scale = useSharedValue(1);
+  const tx = useSharedValue(0);
+
+  useEffect(() => {
+    scale.value = 1;
+    tx.value = 0;
+    if (!on) return;
+    // base 16s / speed, ease-in-out, slow zoom 1 -> ~1.12 with slight pan.
+    const dur = 16000 / speed;
+    scale.value = withRepeat(
+      withTiming(1.12, { duration: dur, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+    tx.value = withRepeat(
+      withTiming(12, { duration: dur, easing: Easing.inOut(Easing.ease) }),
+      -1,
+      true
+    );
+    return () => {
+      cancelAnimation(scale);
+      cancelAnimation(tx);
+    };
+  }, [uri, on]);
+
+  const kbStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }, { translateX: tx.value }],
+  }));
+
+  if (broken || !uri || !uri.startsWith("http")) return null;
+
+  return (
+    <TouchableOpacity
+      onPress={handlePress}
+      activeOpacity={0.85}
+      style={styles.photoOuter}
+    >
+      <Animated.View style={[StyleSheet.absoluteFillObject, kbStyle]}>
+        <Image
+          source={{ uri }}
+          style={styles.photoInner}
+          resizeMode="cover"
+          onError={() => setBroken(true)}
+        />
+      </Animated.View>
+      {/* soft warm light-leak across the top of the photo */}
+      <LinearGradient
+        pointerEvents="none"
+        colors={["rgba(255,240,210,0.22)", "transparent"]}
+        start={{ x: 0.7, y: 0 }}
+        end={{ x: 0.3, y: 0.6 }}
+        style={StyleSheet.absoluteFillObject}
+      />
+    </TouchableOpacity>
+  );
+}
+
+// ---------- SpeakingRing ----------
+// Two to three staggered pulse rings expand out from the replay button while
+// TTS speaks, matching the prototype's soft "speaking" halo.
+
+function PulseRing({ delay, speaking }: { delay: number; speaking: boolean }) {
+  const { on, speed } = useIntensity();
+  const scale = useSharedValue(1);
+  const opacity = useSharedValue(0);
+
+  useEffect(() => {
+    if (!on || !speaking) {
+      cancelAnimation(scale);
+      cancelAnimation(opacity);
+      scale.value = withTiming(1, { duration: 200 });
+      opacity.value = withTiming(0, { duration: 200 });
+      return;
+    }
+    // base 2.6s / speed per ring, ease-out, staggered start.
+    const dur = 2600 / speed;
+    const start = delay / speed;
+    scale.value = withDelay(
+      start,
+      withRepeat(
+        withSequence(
+          withTiming(1, { duration: 1 }),
+          withTiming(1.9, { duration: dur, easing: Easing.out(Easing.ease) })
+        ),
+        -1,
+        false
+      )
+    );
+    opacity.value = withDelay(
+      start,
+      withRepeat(
+        withSequence(
+          withTiming(0.5, { duration: 1 }),
+          withTiming(0, { duration: dur, easing: Easing.out(Easing.ease) })
+        ),
+        -1,
+        false
+      )
+    );
+    return () => {
+      cancelAnimation(scale);
+      cancelAnimation(opacity);
+    };
+  }, [speaking, on, speed, delay]);
+
+  const ringStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+    opacity: opacity.value,
+  }));
+
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={[StyleSheet.absoluteFillObject, styles.speakingRing, ringStyle]}
+    />
+  );
+}
+
+function SpeakingRing({ speaking }: { speaking: boolean }) {
+  return (
+    <>
+      <PulseRing delay={0} speaking={speaking} />
+      <PulseRing delay={850} speaking={speaking} />
+      <PulseRing delay={1700} speaking={speaking} />
+    </>
+  );
+}
+
+// ---------- BriefingScreen ----------
+
 export default function BriefingScreen({ navigation }: any) {
   const { userId } = useAuth();
+  const { on, speed } = useIntensity();
   const [slides, setSlides] = useState<BriefingSlide[]>([]);
   const [currentSlide, setCurrentSlide] = useState(0);
   const [loading, setLoading] = useState(true);
   const [speaking, setSpeaking] = useState(false);
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
   const { open: openLightbox, lightbox } = usePhotoLightbox();
-  // Track the AI briefing id so we can mark it `delivered` once the
-  // user finishes the deck.
   const aiBriefingIdRef = useRef<string | null>(null);
+
+  // Cross-dissolve + rise shared values. Reset then settle on each slide.
+  const slideOpacity = useSharedValue(0);
+  const slideTy = useSharedValue(22);
+  const slideScale = useSharedValue(0.985);
+  const slideStyle = useAnimatedStyle(() => ({
+    opacity: slideOpacity.value,
+    transform: [{ translateY: slideTy.value }, { scale: slideScale.value }],
+  }));
+
+  // Section tint wash. Fades in per slide change; cycles a calm on-palette hue.
+  const tintOpacity = useSharedValue(0);
+  const tintStyle = useAnimatedStyle(() => ({ opacity: tintOpacity.value }));
+
+  // Progress bar fill. Springs to width with a purple glow.
+  const progress = useSharedValue(0);
+  const progressStyle = useAnimatedStyle(() => ({
+    width: `${progress.value * 100}%`,
+  }));
 
   useEffect(() => {
     loadBriefing();
@@ -101,19 +271,11 @@ export default function BriefingScreen({ navigation }: any) {
       return;
     }
 
-    // ── AI path ───────────────────────────────────────────────────
-    // If a co-user-approved (or already-delivered) briefing exists for
-    // today, render it. Otherwise fall back to the procedural builder
-    // so the user is never blocked.
     try {
       const ai = await getTodaysBriefing(userId);
       if (ai && ai.slides && ai.slides.length > 0) {
         const resolved = await resolveSlidePhotos(ai.slides);
 
-        // Build a pool of verified, http-prefixed photo URLs to fill
-        // slides whose kind implies a photo but where the AI didn't
-        // include one. Start from URLs already present on the resolved
-        // slides, then top up from recent verified media if needed.
         const verifiedPool: string[] = [];
         for (const s of resolved) {
           const u = s.photo_url;
@@ -138,14 +300,12 @@ export default function BriefingScreen({ navigation }: any) {
           }
         }
 
-        // Fetch the user's profile photo as a last-resort fallback.
         const { data: userRow } = await supabase
           .from("users")
           .select("photo_url")
           .eq("id", userId)
           .single();
-        const userPhoto =
-          (userRow?.photo_url as string | undefined | null) ?? null;
+        const userPhoto = (userRow?.photo_url as string | undefined | null) ?? null;
 
         const patched = backfillPhotos(resolved, verifiedPool, userPhoto);
         const mapped = patched.map(mapAISlide);
@@ -158,7 +318,6 @@ export default function BriefingScreen({ navigation }: any) {
       console.warn("BriefingScreen: AI path threw, falling back:", err);
     }
 
-    // ── Fallback (procedural) ─────────────────────────────────────
     await buildBriefing();
   }
 
@@ -170,27 +329,32 @@ export default function BriefingScreen({ navigation }: any) {
   }, [currentSlide, slides]);
 
   function animateSlide() {
-    fadeAnim.setValue(0);
-    slideAnim.setValue(30);
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.timing(slideAnim, {
-        toValue: 0,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    // cross-dissolve + rise: opacity 0->1, translateY 22->0, scale .985->1.
+    const dur = on ? 650 / speed : 1;
+    const ease = Easing.bezier(0.2, 0.7, 0.3, 1);
+    slideOpacity.value = 0;
+    slideTy.value = on ? 22 : 0;
+    slideScale.value = on ? 0.985 : 1;
+    slideOpacity.value = withTiming(1, { duration: dur, easing: ease });
+    slideTy.value = withTiming(0, { duration: dur, easing: ease });
+    slideScale.value = withTiming(1, { duration: dur, easing: ease });
+
+    // section tint wash fades in (base 1.1s).
+    tintOpacity.value = 0;
+    tintOpacity.value = on
+      ? withTiming(0.85, { duration: 1100 / speed, easing: Easing.ease })
+      : withTiming(0.85, { duration: 1 });
+
+    // progress bar fills with a spring-ish glide.
+    const pct = slides.length > 0 ? (currentSlide + 1) / slides.length : 0;
+    progress.value = withTiming(pct, {
+      duration: on ? 700 / speed : 1,
+      easing: Easing.bezier(0.4, 0, 0.2, 1),
+    });
   }
 
   function handleExit() {
     tts.stop();
-    // If the user exits an AI briefing partway through, still mark it
-    // delivered so it doesn't keep re-appearing tomorrow as
-    // "approved-not-yet-delivered".
     const id = aiBriefingIdRef.current;
     if (id) {
       markDelivered(id);
@@ -204,7 +368,6 @@ export default function BriefingScreen({ navigation }: any) {
 
     const briefingSlides: BriefingSlide[] = [];
 
-    // Fetch user profile
     const { data: user } = await supabase
       .from("users")
       .select("*")
@@ -218,7 +381,6 @@ export default function BriefingScreen({ navigation }: any) {
 
     const fallbackPhotoPool: string[] = [];
 
-    // Greeting
     const today = new Date();
     const dayName = today.toLocaleDateString("en-US", { weekday: "long" });
     const dateStr = today.toLocaleDateString("en-US", {
@@ -235,7 +397,6 @@ export default function BriefingScreen({ navigation }: any) {
       photoUrl: user.photo_url || undefined,
     });
 
-    // Location
     if (user.location) {
       briefingSlides.push({
         text: `You live in ${user.location}`,
@@ -243,7 +404,6 @@ export default function BriefingScreen({ navigation }: any) {
       });
     }
 
-    // Life facts
     const { data: facts } = await supabase
       .from("life_facts")
       .select("fact")
@@ -258,14 +418,12 @@ export default function BriefingScreen({ navigation }: any) {
       });
     }
 
-    // People
     const { data: people } = await supabase
       .from("people")
       .select("*")
       .eq("user_id", userId);
 
     if (people && people.length > 0) {
-      // Fetch fallback photos for people without a photo_url
       const peopleWithoutPhoto = people.filter((p) => !p.photo_url);
       const fallbackPhotoMap: Record<string, string> = {};
 
@@ -273,10 +431,7 @@ export default function BriefingScreen({ navigation }: any) {
         const { data: mediaPeoplePhotos } = await supabase
           .from("media_people")
           .select("person_id, media(file_url, verification_status)")
-          .in(
-            "person_id",
-            peopleWithoutPhoto.map((p) => p.id)
-          )
+          .in("person_id", peopleWithoutPhoto.map((p) => p.id))
           .eq("verified", true)
           .gte("ai_confidence", 0.8);
 
@@ -292,14 +447,10 @@ export default function BriefingScreen({ navigation }: any) {
       }
 
       Object.values(fallbackPhotoMap).forEach((url) => {
-        if (url && !fallbackPhotoPool.includes(url)) {
-          fallbackPhotoPool.push(url);
-        }
+        if (url && !fallbackPhotoPool.includes(url)) fallbackPhotoPool.push(url);
       });
 
-      briefingSlides.push({
-        text: "The important people in your life",
-      });
+      briefingSlides.push({ text: "The important people in your life" });
 
       for (const person of people) {
         let subtitle = person.relationship;
@@ -314,22 +465,18 @@ export default function BriefingScreen({ navigation }: any) {
       }
     }
 
-    // Recent memories (verified photos with sensitivity filtering)
     const { data: filtersData } = await supabase
       .from("sensitivity_filters")
       .select("*")
       .eq("user_id", userId);
 
     const sensitivityFilters: SensitivityFilter[] = filtersData || [];
-
     const filteredPersonIds = sensitivityFilters
       .filter((f) => f.filter_type === "person" && f.person_id)
       .map((f) => f.person_id);
-
     const filteredTopics = sensitivityFilters
       .filter((f) => f.filter_type === "topic")
       .map((f) => f.filter_value.toLowerCase());
-
     const filteredTimePeriods = sensitivityFilters
       .filter((f) => f.filter_type === "time_period")
       .map((f) => ({ start: f.start_date, end: f.end_date }));
@@ -344,7 +491,6 @@ export default function BriefingScreen({ navigation }: any) {
       .limit(10);
 
     if (recentMedia && recentMedia.length > 0) {
-      // Fetch tagged people for these photos
       const mediaIds = recentMedia.map((m) => m.id);
       const mediaPersonIds: Record<string, string[]> = {};
 
@@ -360,27 +506,17 @@ export default function BriefingScreen({ navigation }: any) {
         });
       }
 
-      // Apply sensitivity filters
       const safePhotos = recentMedia.filter((m) => {
-        // Exclude photos linked to filtered people
         const personIds = mediaPersonIds[m.id] || [];
         if (personIds.some((pid) => filteredPersonIds.includes(pid))) return false;
-
-        // Exclude photos with descriptions containing filtered topics
         if (m.description && filteredTopics.some((topic) => m.description!.toLowerCase().includes(topic))) return false;
-
-        // Exclude photos taken during filtered time periods
         if (m.taken_at) {
           const photoDate = m.taken_at.split("T")[0];
-          if (
-            filteredTimePeriods.some((period) => {
-              if (!period.start || !period.end) return false;
-              return photoDate >= period.start && photoDate <= period.end;
-            })
-          )
-            return false;
+          if (filteredTimePeriods.some((period) => {
+            if (!period.start || !period.end) return false;
+            return photoDate >= period.start && photoDate <= period.end;
+          })) return false;
         }
-
         return true;
       });
 
@@ -416,7 +552,6 @@ export default function BriefingScreen({ navigation }: any) {
       }
     }
 
-    // Today's events
     const todayStr = today.toISOString().split("T")[0];
     const { data: todayEvents } = await supabase
       .from("events")
@@ -433,11 +568,9 @@ export default function BriefingScreen({ navigation }: any) {
       });
     }
 
-    // Upcoming events (next 7 days)
     const nextWeek = new Date(today);
     nextWeek.setDate(nextWeek.getDate() + 7);
     const nextWeekStr = nextWeek.toISOString().split("T")[0];
-
     const { data: upcomingEvents } = await supabase
       .from("events")
       .select("*")
@@ -449,40 +582,27 @@ export default function BriefingScreen({ navigation }: any) {
     if (upcomingEvents && upcomingEvents.length > 0) {
       briefingSlides.push({
         text: "Coming up this week",
-        subtitle: upcomingEvents
-          .map((e) => {
-            const d = new Date(e.event_date).toLocaleDateString("en-US", {
-              weekday: "long",
-              month: "short",
-              day: "numeric",
-            });
-            return `${d}: ${e.title}`;
-          })
-          .join("\n\n"),
+        subtitle: upcomingEvents.map((e) => {
+          const d = new Date(e.event_date).toLocaleDateString("en-US", {
+            weekday: "long", month: "short", day: "numeric",
+          });
+          return `${d}: ${e.title}`;
+        }).join("\n\n"),
         photoUrl: fallbackPhotoPool[1] || fallbackPhotoPool[0] || user.photo_url || undefined,
       });
     }
 
-    // End
     briefingSlides.push({
       text: "That's your briefing for today",
       subtitle: "Have a wonderful day!",
       photoUrl: user.photo_url || undefined,
     });
 
-    // Ensure every applicable slide has a photo when we have one available.
     const normalizedSlides = briefingSlides.map((slide, idx) => {
       if (slide.photoUrl) return slide;
-
       const poolPhoto = fallbackPhotoPool[idx % (fallbackPhotoPool.length || 1)];
-      if (poolPhoto) {
-        return { ...slide, photoUrl: poolPhoto };
-      }
-
-      if (user.photo_url) {
-        return { ...slide, photoUrl: user.photo_url };
-      }
-
+      if (poolPhoto) return { ...slide, photoUrl: poolPhoto };
+      if (user.photo_url) return { ...slide, photoUrl: user.photo_url };
       return slide;
     });
 
@@ -498,11 +618,8 @@ export default function BriefingScreen({ navigation }: any) {
       : slide.text;
 
     setSpeaking(true);
-    await tts.speak(fullText, {
-      onDone: () => setSpeaking(false),
-    });
+    await tts.speak(fullText, { onDone: () => setSpeaking(false) });
 
-    // Pre-warm the next slide's audio so navigation feels instant.
     const next = slides[currentSlide + 1];
     if (next) {
       const nextText = next.ttsOverride
@@ -519,8 +636,6 @@ export default function BriefingScreen({ navigation }: any) {
     if (currentSlide < slides.length - 1) {
       setCurrentSlide(currentSlide + 1);
     } else {
-      // Final slide → mark the AI briefing delivered (no-op if we're
-      // on the procedural fallback path).
       const id = aiBriefingIdRef.current;
       if (id) {
         markDelivered(id);
@@ -532,36 +647,47 @@ export default function BriefingScreen({ navigation }: any) {
 
   function prevSlide() {
     tts.stop();
-    if (currentSlide > 0) {
-      setCurrentSlide(currentSlide - 1);
-    }
+    if (currentSlide > 0) setCurrentSlide(currentSlide - 1);
   }
 
   function replaySlide() {
-    if (slides[currentSlide]) {
-      speakSlide(slides[currentSlide]);
-    }
+    if (slides[currentSlide]) speakSlide(slides[currentSlide]);
   }
+
+  // Per-slide tint wash colors — cycled from the on-palette purple ramp so the
+  // section tint shifts gently as in the prototype, without new hardcoded hex.
+  const TINT_COLORS = [
+    colors.primaryDeep,
+    colors.primary,
+    colors.surfaceRaised,
+    colors.primaryDeep,
+  ];
+  const tintColor = TINT_COLORS[currentSlide % TINT_COLORS.length];
+
+  // ---------- Render ----------
 
   if (loading) {
     return (
-      <View testID="briefing-loading" style={styles.container}>
-        <ActivityIndicator size="large" color="#7c4dff" />
-        <Text style={styles.loadingText}>Preparing your briefing...</Text>
+      <View testID="briefing-loading" style={styles.loadingContainer}>
+        <BrandLoader caption="Preparing your briefing…" />
       </View>
     );
   }
 
   if (slides.length === 0) {
     return (
-      <View style={styles.container}>
-        <Text style={styles.mainText}>No information available yet</Text>
-        <Text style={styles.subtitleText}>
-          Ask your helper to add some information about you
-        </Text>
-        <TouchableOpacity style={styles.navButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.navButtonText}>Go Back</Text>
-        </TouchableOpacity>
+      <View style={styles.emptyContainer}>
+        <AliveEmptyState
+          message="No information available yet"
+          caption="Ask your helper to add some information about you"
+        />
+        <ShimmerButton
+          label="Go Back"
+          icon="back"
+          hero
+          onPress={() => navigation.goBack()}
+          style={styles.emptyButton}
+        />
       </View>
     );
   }
@@ -570,133 +696,190 @@ export default function BriefingScreen({ navigation }: any) {
 
   return (
     <View testID="briefing-screen" style={styles.container}>
-      {/* Progress */}
+      {/* Section ambient tint wash — fades in on each slide change */}
+      <Animated.View
+        pointerEvents="none"
+        style={[StyleSheet.absoluteFillObject, tintStyle]}
+      >
+        <LinearGradient
+          colors={[tintColor + "66", colors.bg]}
+          start={{ x: 0.5, y: 0 }}
+          end={{ x: 0.5, y: 0.7 }}
+          style={StyleSheet.absoluteFillObject}
+        />
+      </Animated.View>
+
+      {/* Progress bar */}
       <View testID="briefing-progress-bar" style={styles.progressBar}>
-        <View
+        <Animated.View
           style={[
             styles.progressFill,
-            { width: `${((currentSlide + 1) / slides.length) * 100}%` },
+            on && styles.progressFillGlow,
+            progressStyle,
           ]}
         />
       </View>
 
-      <TouchableOpacity testID="briefing-exit-button" style={styles.exitButton} onPress={handleExit}>
-        <Text style={styles.exitButtonText}>✕</Text>
-      </TouchableOpacity>
+      <SpringPressable onPress={handleExit} style={styles.exitButton}>
+        <View testID="briefing-exit-button">
+          <Icon name="close" size={20} color={colors.danger} />
+        </View>
+      </SpringPressable>
 
-      {/* Content */}
+      {/* Slide content with cross-dissolve + rise */}
       <View testID="briefing-slide-content" style={styles.slideContent}>
-        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
-          {slide.photoUrl && (
-            <BriefingPhoto
+        <Animated.View style={[styles.slideInner, slideStyle]}>
+          {slide.photoUrl ? (
+            <KenBurnsPhoto
               uri={slide.photoUrl}
-              style={styles.photo}
               onTap={() => openLightbox({ photoUrl: slide.photoUrl! })}
             />
-          )}
-          <Text testID="briefing-slide-text" style={styles.mainText}>{slide.text}</Text>
-          {slide.subtitle && (
-            <Text testID="briefing-slide-subtitle" style={styles.subtitleText}>{slide.subtitle}</Text>
-          )}
+          ) : null}
+          <Text testID="briefing-slide-text" style={styles.mainText}>
+            {slide.text}
+          </Text>
+          {slide.subtitle ? (
+            <Text testID="briefing-slide-subtitle" style={styles.subtitleText}>
+              {slide.subtitle}
+            </Text>
+          ) : null}
         </Animated.View>
       </View>
 
       {/* Controls */}
       <View style={styles.controls}>
-        <TouchableOpacity
-          testID="briefing-prev-button"
-          style={[styles.navButton, currentSlide === 0 && styles.navButtonDisabled]}
-          onPress={prevSlide}
+        <SpringPressable
           disabled={currentSlide === 0}
+          onPress={prevSlide}
+          style={[styles.navButton, currentSlide === 0 && styles.navButtonDisabled]}
         >
-          <Text style={styles.navButtonText}>← Back</Text>
-        </TouchableOpacity>
+          <View testID="briefing-prev-button" style={styles.navButtonRow}>
+            <Icon name="back" size={20} color={colors.fg} />
+            <Text style={styles.navButtonText}>Back</Text>
+          </View>
+        </SpringPressable>
 
-        <TouchableOpacity testID="briefing-replay-button" style={styles.replayButton} onPress={replaySlide}>
-          <Icon name="listen" size={24} color="#ffffff" />
-        </TouchableOpacity>
+        {/* Replay button with speaking ring */}
+        <View style={styles.replayOuter}>
+          <SpeakingRing speaking={speaking} />
+          <SpringPressable onPress={replaySlide} style={styles.replayButton}>
+            <View testID="briefing-replay-button">
+              <Icon name="listen" size={26} color={colors.fgStrong} />
+            </View>
+          </SpringPressable>
+        </View>
 
-        <TouchableOpacity testID="briefing-next-button" style={styles.navButton} onPress={nextSlide}>
-          <Text style={styles.navButtonText}>
-            {currentSlide === slides.length - 1 ? "Done" : "Next →"}
-          </Text>
-        </TouchableOpacity>
+        <SpringPressable onPress={nextSlide} style={styles.navButton}>
+          <View testID="briefing-next-button" style={styles.navButtonRow}>
+            <Text style={styles.navButtonText}>
+              {currentSlide === slides.length - 1 ? "Done" : "Next"}
+            </Text>
+            <Icon name="forward" size={20} color={colors.fg} />
+          </View>
+        </SpringPressable>
       </View>
       {lightbox}
     </View>
   );
 }
 
-function BriefingPhoto({
-  uri,
-  style,
-  onTap,
-}: {
-  uri: string;
-  style: any;
-  onTap: () => void;
-}) {
-  const handlePress = useTapToOpen(onTap);
-  const [broken, setBroken] = useState(false);
-  if (broken || !uri || !uri.startsWith("http")) {
-    return null;
-  }
-  return (
-    <TouchableOpacity onPress={handlePress} activeOpacity={0.85}>
-      <Image source={{ uri }} style={style} onError={() => setBroken(true)} />
-    </TouchableOpacity>
-  );
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: colors.bg,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  emptyContainer: {
+    flex: 1,
+    backgroundColor: colors.bg,
     justifyContent: "center",
     padding: 40,
   },
-  loadingText: {
-    color: "#e0e0e0",
-    fontSize: 18,
-    textAlign: "center",
-    marginTop: 16,
+  emptyButton: {
+    marginTop: 28,
   },
   progressBar: {
     height: 6,
-    backgroundColor: "#2a2a4a",
+    backgroundColor: colors.surface,
     borderRadius: 3,
     position: "absolute",
     top: 60,
-    left: 40,
-    right: 40,
+    left: 32,
+    right: 32,
+    zIndex: 5,
+    overflow: "hidden",
   },
   progressFill: {
     height: 6,
-    backgroundColor: "#7c4dff",
+    backgroundColor: colors.primary,
     borderRadius: 3,
+  },
+  progressFillGlow: {
+    shadowColor: colors.primary,
+    shadowOpacity: 0.7,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 4,
+  },
+  exitButton: {
+    position: "absolute",
+    top: 80,
+    right: 20,
+    width: 44,
+    height: 44,
+    borderRadius: radius.full,
+    backgroundColor: colors.surface,
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
   },
   slideContent: {
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    paddingHorizontal: 32,
+    zIndex: 3,
   },
-  photo: {
+  slideInner: {
+    width: "100%",
+    alignItems: "center",
+  },
+  // Photo container: fixed aspect ratio, clips Ken Burns overflow
+  photoOuter: {
     width: "100%",
     aspectRatio: 4 / 3,
-    borderRadius: 16,
+    borderRadius: radius.lg,
     marginBottom: 24,
     backgroundColor: "#000",
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.4,
+    shadowRadius: 40,
+    shadowOffset: { width: 0, height: 18 },
+    elevation: 10,
+  },
+  photoInner: {
+    width: "100%",
+    height: "100%",
   },
   mainText: {
     fontSize: 32,
-    fontWeight: "bold",
-    color: "#e0e0e0",
+    fontWeight: "700",
+    color: colors.fg,
     textAlign: "center",
-    marginBottom: 16,
+    marginBottom: 14,
+    lineHeight: 38,
   },
   subtitleText: {
     fontSize: 20,
-    color: "#b388ff",
+    color: colors.primarySoft,
     textAlign: "center",
     lineHeight: 30,
   },
@@ -704,48 +887,46 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    paddingBottom: 20,
+    paddingHorizontal: 24,
+    paddingBottom: 28,
+    zIndex: 6,
   },
   navButton: {
-    backgroundColor: "#2a2a4a",
+    backgroundColor: colors.surface,
     paddingVertical: 16,
-    paddingHorizontal: 28,
-    borderRadius: 14,
+    paddingHorizontal: 26,
+    borderRadius: radius.md,
   },
   navButtonDisabled: {
     opacity: 0.3,
   },
+  navButtonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
   navButtonText: {
     fontSize: 18,
     fontWeight: "600",
-    color: "#e0e0e0",
+    color: colors.fg,
   },
-  replayButton: {
-    backgroundColor: "#7c4dff",
+  replayOuter: {
     width: 60,
     height: 60,
-    borderRadius: 30,
     justifyContent: "center",
     alignItems: "center",
   },
-  replayButtonText: {
-    fontSize: 28,
-  },
-  exitButton: {
-    position: "absolute",
-    top: 54,
-    right: 20,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "#2a2a4a",
+  replayButton: {
+    backgroundColor: colors.primary,
+    width: 60,
+    height: 60,
+    borderRadius: radius.full,
     justifyContent: "center",
     alignItems: "center",
-    zIndex: 10,
   },
-  exitButtonText: {
-    color: "#ff6b6b",
-    fontSize: 20,
-    fontWeight: "bold",
+  speakingRing: {
+    borderRadius: radius.full,
+    borderWidth: 2,
+    borderColor: colors.primary,
   },
 });

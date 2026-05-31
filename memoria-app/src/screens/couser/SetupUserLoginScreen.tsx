@@ -9,11 +9,15 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  ScrollView,
 } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../context/AuthContext";
 import Icon from "../../components/Icon";
+import { AnimatedEntrance } from "../../motion/primitives";
+import { ShimmerButton } from "../../motion/ui";
+import { colors, radius, type } from "../../theme";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -24,6 +28,8 @@ export default function SetupUserLoginScreen({ navigation }: Props) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [emailFocus, setEmailFocus] = useState(false);
+  const [passwordFocus, setPasswordFocus] = useState(false);
 
   async function handleSetup() {
     if (!email.trim() || !password.trim()) {
@@ -84,59 +90,88 @@ export default function SetupUserLoginScreen({ navigation }: Props) {
       style={styles.container}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <Text style={styles.title}>Set Up Their Login</Text>
-      <Text style={styles.subtitle}>
-        Create a simple email and password so your loved one can log into their
-        own experience
-      </Text>
-
-      <Text style={styles.label}>Their Email</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="e.g., maria@email.com"
-        placeholderTextColor="#888"
-        value={email}
-        onChangeText={setEmail}
-        autoCapitalize="none"
-        keyboardType="email-address"
-      />
-
-      <Text style={styles.label}>Their Password</Text>
-      <TextInput
-        style={styles.input}
-        placeholder="Something simple they can remember"
-        placeholderTextColor="#888"
-        value={password}
-        onChangeText={setPassword}
-        secureTextEntry
-      />
-
-      <View style={styles.hintRow}>
-        <Icon name="tip" size={18} color="#888" />
-        <Text style={styles.hint}>
-          Keep it simple — they'll need to type this to log in. You can always
-          help them.
-        </Text>
-      </View>
-
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleSetup}
-        disabled={loading}
+      <ScrollView
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
-        {loading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Create Login</Text>
-        )}
-      </TouchableOpacity>
+        <AnimatedEntrance index={0}>
+          <Text style={styles.title}>Set Up Their Login</Text>
+          <Text style={styles.subtitle}>
+            Create a simple email and password so your loved one can log into
+            their own experience
+          </Text>
+        </AnimatedEntrance>
 
-      <TouchableOpacity
-        style={styles.backButton}
-        onPress={() => navigation.goBack()}
-      >
-        <Text style={styles.backText}>Cancel</Text>
-      </TouchableOpacity>
+        <AnimatedEntrance index={1}>
+          <Text style={styles.label}>Their Email</Text>
+          <View
+            style={[styles.inputWrap, emailFocus && styles.inputWrapFocused]}
+          >
+            <TextInput
+              style={styles.input}
+              placeholder="e.g., maria@email.com"
+              placeholderTextColor={colors.fgMuted}
+              value={email}
+              onChangeText={setEmail}
+              onFocus={() => setEmailFocus(true)}
+              onBlur={() => setEmailFocus(false)}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+          </View>
+        </AnimatedEntrance>
+
+        <AnimatedEntrance index={2}>
+          <Text style={styles.label}>Their Password</Text>
+          <View
+            style={[styles.inputWrap, passwordFocus && styles.inputWrapFocused]}
+          >
+            <TextInput
+              style={styles.input}
+              placeholder="Something simple they can remember"
+              placeholderTextColor={colors.fgMuted}
+              value={password}
+              onChangeText={setPassword}
+              onFocus={() => setPasswordFocus(true)}
+              onBlur={() => setPasswordFocus(false)}
+              secureTextEntry
+            />
+          </View>
+        </AnimatedEntrance>
+
+        <AnimatedEntrance index={3}>
+          <View style={styles.hintRow}>
+            <Icon name="tip" size={18} color={colors.fgMuted} />
+            <Text style={styles.hint}>
+              Keep it simple — they'll need to type this to log in. You can
+              always help them.
+            </Text>
+          </View>
+        </AnimatedEntrance>
+
+        <AnimatedEntrance index={4}>
+          <ShimmerButton
+            hero
+            disabled={loading}
+            onPress={handleSetup}
+            style={styles.button}
+          >
+            {loading ? (
+              <ActivityIndicator color={colors.fgStrong} />
+            ) : (
+              <Text style={styles.buttonText}>Create Login</Text>
+            )}
+          </ShimmerButton>
+
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={styles.backText}>Cancel</Text>
+          </TouchableOpacity>
+        </AnimatedEntrance>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }
@@ -144,35 +179,53 @@ export default function SetupUserLoginScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
+  },
+  scrollContent: {
+    flexGrow: 1,
     justifyContent: "center",
-    padding: 40,
+    padding: 32,
   },
   title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
+    fontSize: type.title,
+    fontWeight: type.weightBold,
+    color: colors.primarySoft,
     marginBottom: 8,
   },
   subtitle: {
-    fontSize: 17,
-    color: "#e0e0e0",
+    fontSize: type.md,
+    color: colors.fg,
     marginBottom: 32,
     lineHeight: 24,
   },
   label: {
-    fontSize: 16,
-    color: "#b388ff",
-    marginBottom: 8,
-    fontWeight: "600",
+    fontSize: type.xs,
+    fontWeight: type.weightBold,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: colors.primarySoft,
+    marginBottom: 7,
+  },
+  inputWrap: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    marginBottom: 16,
+  },
+  inputWrapFocused: {
+    backgroundColor: colors.surfaceRaised,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 8,
+    borderWidth: 2,
+    borderColor: colors.primary,
   },
   input: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 18,
-    color: "#fff",
-    marginBottom: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 15,
+    fontSize: type.md,
+    color: colors.fgStrong,
   },
   hintRow: {
     flexDirection: "row",
@@ -182,28 +235,24 @@ const styles = StyleSheet.create({
   },
   hint: {
     flex: 1,
-    fontSize: 14,
-    color: "#888",
+    fontSize: type.sm,
+    color: colors.fgMuted,
     lineHeight: 20,
   },
   button: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
     marginBottom: 16,
   },
   buttonText: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
+    fontSize: type.lg,
+    fontWeight: type.weightMedium,
+    color: colors.fgStrong,
   },
   backButton: {
     alignItems: "center",
     paddingVertical: 12,
   },
   backText: {
-    fontSize: 16,
-    color: "#888",
+    fontSize: type.base,
+    color: colors.fgMuted,
   },
 });

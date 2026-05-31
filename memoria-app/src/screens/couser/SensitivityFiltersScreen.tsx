@@ -7,14 +7,20 @@ import {
   ScrollView,
   TextInput,
   Alert,
-  ActivityIndicator,
 } from "react-native";
+import {
+  AnimatedEntrance,
+  SpringPressable,
+  BrandLoader,
+  AliveEmptyState,
+} from "../../motion/primitives";
+import { ShimmerButton } from "../../motion/ui";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { supabase } from "../../lib/supabase";
 import { embedAndStore } from "../../lib/embeddings";
 import { useAuth } from "../../context/AuthContext";
 import Icon, { IconName } from "../../components/Icon";
-import { colors } from "../../theme";
+import { colors, radius, type } from "../../theme";
 import { SensitivityFilter, Person } from "../../types";
 
 type Props = {
@@ -22,6 +28,51 @@ type Props = {
 };
 
 type FilterType = "person" | "topic" | "time_period" | "intent";
+
+// ---------- FocusField ----------
+// A theme-token text input that blooms a purple focus glow when focused,
+// mirroring the prototype's FormField. Wraps the same TextInput so all
+// existing value/onChangeText/placeholder/multiline logic flows through.
+interface FocusFieldProps {
+  label?: string;
+  value: string;
+  onChangeText: (t: string) => void;
+  placeholder?: string;
+  multiline?: boolean;
+  minHeight?: number;
+}
+
+function FocusField({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  multiline,
+  minHeight,
+}: FocusFieldProps) {
+  const [focused, setFocused] = useState(false);
+  return (
+    <View style={styles.fieldWrap}>
+      {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
+      <View style={[styles.fieldBox, focused && styles.fieldBoxFocus]}>
+        <TextInput
+          style={[
+            styles.fieldInput,
+            multiline && styles.fieldInputMultiline,
+            minHeight ? { minHeight } : null,
+          ]}
+          placeholder={placeholder}
+          placeholderTextColor={colors.fgMutedDim}
+          value={value}
+          onChangeText={onChangeText}
+          multiline={multiline}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+        />
+      </View>
+    </View>
+  );
+}
 
 export default function SensitivityFiltersScreen({ navigation }: Props) {
   const { userId, coUserId } = useAuth();
@@ -187,28 +238,34 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
+        <BrandLoader caption="Loading filters…" />
       </View>
     );
   }
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Back</Text>
-      </TouchableOpacity>
+      <AnimatedEntrance index={0}>
+        <SpringPressable onPress={() => navigation.goBack()} style={styles.backButton}>
+          <Icon name="back" size={20} color={colors.primarySoft} />
+          <Text style={styles.backText}>Back</Text>
+        </SpringPressable>
 
-      <Text style={styles.title}>Sensitivity Filters</Text>
-      <Text style={styles.subtitle}>
-        Set boundaries for what the AI can show or mention. These apply everywhere — briefings, conversations, and reminders.
-      </Text>
+        <Text style={styles.title}>Sensitivity Filters</Text>
+        <Text style={styles.subtitle}>What Memo gently holds back</Text>
+      </AnimatedEntrance>
 
       {/* Existing filters */}
       {filters.length === 0 && !adding && (
-        <Text style={styles.emptyText}>No filters set yet. Tap below to add one.</Text>
+        <AnimatedEntrance index={1}>
+          <AliveEmptyState
+            message="No filters set yet"
+            caption="Tap below to add a boundary for what the AI can show."
+          />
+        </AnimatedEntrance>
       )}
 
-      {filters.map((filter) => {
+      {filters.map((filter, index) => {
         const ftype = filter.filter_type as FilterType;
         const isIntent = ftype === "intent";
         const intentText = (filter as any).intent_text as string | null | undefined;
@@ -216,9 +273,11 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
           ? intentText || filter.filter_value
           : filter.filter_value;
         return (
-          <View key={filter.id} style={styles.filterCard}>
-            <View style={styles.filterHeader}>
-              <Icon name={getFilterIconName(ftype)} size={20} color={colors.primarySoft} />
+          <AnimatedEntrance key={filter.id} index={index + 1} cardMode>
+            <View style={styles.filterCard}>
+              <View style={styles.filterIconBubble}>
+                <Icon name={getFilterIconName(ftype)} size={20} color={colors.primarySoft} />
+              </View>
               <View style={styles.filterInfo}>
                 <Text style={styles.filterType}>{getFilterLabel(ftype)}</Text>
                 <Text style={[styles.filterValue, isIntent && styles.intentValue]}>
@@ -226,143 +285,152 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
                 </Text>
                 {filter.notes && <Text style={styles.filterNotes}>{filter.notes}</Text>}
               </View>
+              <SpringPressable onPress={() => deleteFilter(filter.id)} style={styles.deleteButton}>
+                <Icon name="trash" size={20} color={colors.danger} />
+              </SpringPressable>
             </View>
-            <TouchableOpacity onPress={() => deleteFilter(filter.id)}>
-              <Text style={styles.deleteText}>✕</Text>
-            </TouchableOpacity>
-          </View>
+          </AnimatedEntrance>
         );
       })}
 
       {/* Add filter form */}
       {adding ? (
-        <View style={styles.formContainer}>
-          <Text style={styles.formTitle}>New Filter</Text>
+        <AnimatedEntrance index={filters.length + 1}>
+          <View style={styles.formContainer}>
+            <Text style={styles.formTitle}>New Filter</Text>
 
-          {/* Type selector */}
-          <View style={styles.typeRow}>
-            {(["topic", "person", "time_period", "intent"] as FilterType[]).map((type) => (
-              <TouchableOpacity
-                key={type}
-                style={[styles.typeButton, filterType === type && styles.typeButtonActive]}
+            {/* Type selector — pills */}
+            <View style={styles.typeRow}>
+              {(["topic", "person", "time_period", "intent"] as FilterType[]).map((typeOpt) => {
+                const active = filterType === typeOpt;
+                return (
+                  <SpringPressable
+                    key={typeOpt}
+                    onPress={() => {
+                      setFilterType(typeOpt);
+                      setFilterValue("");
+                      setSelectedPersonId(null);
+                      setStartDate("");
+                      setEndDate("");
+                      setIntentText("");
+                    }}
+                    style={[styles.typePill, active && styles.typePillActive]}
+                  >
+                    <View style={styles.typePillInner}>
+                      <Icon
+                        name={getFilterIconName(typeOpt)}
+                        size={14}
+                        color={active ? colors.fgStrong : colors.primarySoft}
+                      />
+                      <Text style={[styles.typePillText, active && styles.typePillTextActive]}>
+                        {getFilterLabel(typeOpt)}
+                      </Text>
+                    </View>
+                  </SpringPressable>
+                );
+              })}
+            </View>
+
+            {/* Type-specific input */}
+            {filterType === "topic" && (
+              <FocusField
+                placeholder="e.g., the hospital, Uncle Robert"
+                value={filterValue}
+                onChangeText={setFilterValue}
+              />
+            )}
+
+            {filterType === "person" && (
+              <View>
+                {people.length === 0 ? (
+                  <Text style={styles.emptyText}>No people added yet. Add people first.</Text>
+                ) : (
+                  people.map((person) => {
+                    const selected = selectedPersonId === person.id;
+                    return (
+                      <SpringPressable
+                        key={person.id}
+                        onPress={() => setSelectedPersonId(person.id)}
+                        style={[styles.personOption, selected && styles.personOptionActive]}
+                      >
+                        <Text style={styles.personOptionText}>
+                          {person.full_name} — {person.relationship}
+                        </Text>
+                        {selected && (
+                          <Icon name="check" size={18} color={colors.primary} />
+                        )}
+                      </SpringPressable>
+                    );
+                  })
+                )}
+              </View>
+            )}
+
+            {filterType === "time_period" && (
+              <View>
+                <FocusField
+                  placeholder="Start date (YYYY-MM-DD)"
+                  value={startDate}
+                  onChangeText={setStartDate}
+                />
+                <FocusField
+                  placeholder="End date (YYYY-MM-DD)"
+                  value={endDate}
+                  onChangeText={setEndDate}
+                />
+              </View>
+            )}
+
+            {filterType === "intent" && (
+              <FocusField
+                placeholder="Describe what to avoid (e.g., 'anything about Mom's death' or 'don't bring up the hospital')."
+                value={intentText}
+                onChangeText={setIntentText}
+                multiline
+                minHeight={80}
+              />
+            )}
+
+            {/* Notes */}
+            <FocusField
+              placeholder="Why? (optional — for your reference)"
+              value={notes}
+              onChangeText={setNotes}
+              multiline
+              minHeight={60}
+            />
+
+            {/* Actions */}
+            <View style={styles.formActions}>
+              <SpringPressable
+                style={styles.cancelButton}
                 onPress={() => {
-                  setFilterType(type);
+                  setAdding(false);
                   setFilterValue("");
                   setSelectedPersonId(null);
                   setStartDate("");
                   setEndDate("");
+                  setNotes("");
                   setIntentText("");
                 }}
               >
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                  <Icon name={getFilterIconName(type)} size={14} color={filterType === type ? colors.fgStrong : colors.primarySoft} />
-                  <Text style={[styles.typeButtonText, filterType === type && styles.typeButtonTextActive]}>
-                    {getFilterLabel(type)}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-
-          {/* Type-specific input */}
-          {filterType === "topic" && (
-            <TextInput
-              style={styles.input}
-              placeholder="e.g., the hospital, Uncle Robert"
-              placeholderTextColor="#666"
-              value={filterValue}
-              onChangeText={setFilterValue}
-            />
-          )}
-
-          {filterType === "person" && (
-            <View>
-              {people.length === 0 ? (
-                <Text style={styles.emptyText}>No people added yet. Add people first.</Text>
-              ) : (
-                people.map((person) => (
-                  <TouchableOpacity
-                    key={person.id}
-                    style={[
-                      styles.personOption,
-                      selectedPersonId === person.id && styles.personOptionActive,
-                    ]}
-                    onPress={() => setSelectedPersonId(person.id)}
-                  >
-                    <Text style={styles.personOptionText}>
-                      {person.full_name} — {person.relationship}
-                    </Text>
-                  </TouchableOpacity>
-                ))
-              )}
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </SpringPressable>
+              <View style={styles.saveButtonWrap}>
+                <ShimmerButton label="Save filter" icon="check" onPress={addFilter} />
+              </View>
             </View>
-          )}
-
-          {filterType === "time_period" && (
-            <View>
-              <TextInput
-                style={styles.input}
-                placeholder="Start date (YYYY-MM-DD)"
-                placeholderTextColor="#666"
-                value={startDate}
-                onChangeText={setStartDate}
-              />
-              <TextInput
-                style={styles.input}
-                placeholder="End date (YYYY-MM-DD)"
-                placeholderTextColor="#666"
-                value={endDate}
-                onChangeText={setEndDate}
-              />
-            </View>
-          )}
-
-          {filterType === "intent" && (
-            <TextInput
-              style={[styles.input, styles.intentInput]}
-              placeholder="Describe what to avoid (e.g., 'anything about Mom's death' or 'don't bring up the hospital')."
-              placeholderTextColor="#666"
-              value={intentText}
-              onChangeText={setIntentText}
-              multiline
-            />
-          )}
-
-          {/* Notes */}
-          <TextInput
-            style={[styles.input, styles.notesInput]}
-            placeholder="Why? (optional — for your reference)"
-            placeholderTextColor="#666"
-            value={notes}
-            onChangeText={setNotes}
-            multiline
-          />
-
-          {/* Actions */}
-          <View style={styles.formActions}>
-            <TouchableOpacity
-              style={styles.cancelButton}
-              onPress={() => {
-                setAdding(false);
-                setFilterValue("");
-                setSelectedPersonId(null);
-                setStartDate("");
-                setEndDate("");
-                setNotes("");
-                setIntentText("");
-              }}
-            >
-              <Text style={styles.cancelButtonText}>Cancel</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.saveButton} onPress={addFilter}>
-              <Text style={styles.saveButtonText}>Add Filter</Text>
-            </TouchableOpacity>
           </View>
-        </View>
+        </AnimatedEntrance>
       ) : (
-        <TouchableOpacity style={styles.addButton} onPress={() => setAdding(true)}>
-          <Text style={styles.addButtonText}>+ Add Sensitivity Filter</Text>
-        </TouchableOpacity>
+        <AnimatedEntrance index={filters.length + 1} style={styles.addButtonWrap}>
+          <ShimmerButton
+            hero
+            label="Add Sensitivity Filter"
+            icon="add"
+            onPress={() => setAdding(true)}
+          />
+        </AnimatedEntrance>
       )}
     </ScrollView>
   );
@@ -371,7 +439,7 @@ export default function SensitivityFiltersScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   content: {
     padding: 40,
@@ -382,86 +450,96 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
+  },
+  backButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 20,
+    alignSelf: "flex-start",
   },
   backText: {
-    color: "#b388ff",
-    fontSize: 16,
-    marginBottom: 20,
+    color: colors.primarySoft,
+    fontSize: type.base,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
+    fontSize: type.title,
+    fontWeight: type.weightBold,
+    color: colors.fgStrong,
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 15,
-    color: "#999",
+    fontSize: type.base,
+    color: colors.fgMuted,
     marginBottom: 28,
     lineHeight: 22,
   },
   emptyText: {
-    color: "#666",
-    fontSize: 15,
+    color: colors.fgMutedDim,
+    fontSize: type.sm,
     textAlign: "center",
     marginVertical: 24,
   },
+
+  // Filter card
   filterCard: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
     padding: 16,
     marginBottom: 12,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    borderLeftWidth: 4,
-    borderLeftColor: "#ff6b6b",
+    gap: 14,
   },
-  filterHeader: {
-    flexDirection: "row",
+  filterIconBubble: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.surfaceSunk,
     alignItems: "center",
-    flex: 1,
-  },
-  filterIcon: {
-    fontSize: 24,
-    marginRight: 12,
+    justifyContent: "center",
   },
   filterInfo: {
     flex: 1,
   },
   filterType: {
-    fontSize: 12,
-    color: "#ff6b6b",
-    fontWeight: "600",
+    fontSize: type.xs,
+    color: colors.primarySoft,
+    fontWeight: type.weightBold,
     textTransform: "uppercase",
-    marginBottom: 2,
+    letterSpacing: 0.6,
+    marginBottom: 3,
   },
   filterValue: {
-    fontSize: 17,
-    color: "#e0e0e0",
-    fontWeight: "600",
+    fontSize: type.md,
+    color: colors.fg,
+    fontWeight: type.weightMedium,
   },
   filterNotes: {
-    fontSize: 13,
-    color: "#999",
+    fontSize: type.xs,
+    color: colors.fgMuted,
     marginTop: 4,
+    lineHeight: 18,
   },
-  deleteText: {
-    color: "#ff6b6b",
-    fontSize: 20,
-    paddingLeft: 12,
+  intentValue: {
+    fontStyle: "italic",
   },
+  deleteButton: {
+    padding: 6,
+  },
+
+  // Form
   formContainer: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     padding: 20,
     marginTop: 16,
   },
   formTitle: {
-    fontSize: 20,
-    fontWeight: "bold",
-    color: "#e0e0e0",
+    fontSize: type.xl,
+    fontWeight: type.weightBold,
+    color: colors.fgStrong,
     marginBottom: 16,
   },
   typeRow: {
@@ -469,95 +547,114 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     gap: 8,
   },
-  typeButton: {
+  typePill: {
     flex: 1,
     paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "#1a1a2e",
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceSunk,
     alignItems: "center",
   },
-  typeButtonActive: {
-    backgroundColor: "#7c4dff",
+  typePillActive: {
+    backgroundColor: colors.primary,
   },
-  typeButtonText: {
-    color: "#999",
-    fontSize: 13,
-    fontWeight: "600",
+  typePillInner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
-  typeButtonTextActive: {
-    color: "#ffffff",
+  typePillText: {
+    color: colors.fgMuted,
+    fontSize: type.xs,
+    fontWeight: type.weightMedium,
   },
-  input: {
-    backgroundColor: "#1a1a2e",
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    color: "#e0e0e0",
+  typePillTextActive: {
+    color: colors.fgStrong,
+  },
+
+  // FocusField
+  fieldWrap: {
     marginBottom: 12,
   },
-  notesInput: {
-    minHeight: 60,
+  fieldLabel: {
+    fontSize: type.xs,
+    fontWeight: type.weightBold,
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: colors.primarySoft,
+    marginBottom: 7,
+  },
+  fieldBox: {
+    backgroundColor: colors.surfaceSunk,
+    borderRadius: radius.sm,
+    paddingHorizontal: 16,
+    paddingVertical: 4,
+    shadowColor: colors.primary,
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    shadowOffset: { width: 0, height: 0 },
+  },
+  fieldBoxFocus: {
+    backgroundColor: colors.surfaceRaised,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    shadowColor: colors.primary,
+    shadowOpacity: 0.4,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 0 },
+    elevation: 6,
+  },
+  fieldInput: {
+    fontSize: type.base,
+    color: colors.fgStrong,
+    paddingVertical: 11,
+  },
+  fieldInputMultiline: {
     textAlignVertical: "top",
+    paddingTop: 11,
   },
-  intentInput: {
-    minHeight: 80,
-    textAlignVertical: "top",
-  },
-  intentValue: {
-    fontStyle: "italic",
-  },
+
+  // Person option
   personOption: {
-    backgroundColor: "#1a1a2e",
-    borderRadius: 10,
+    backgroundColor: colors.surfaceSunk,
+    borderRadius: radius.sm,
     padding: 14,
     marginBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   personOptionActive: {
     borderWidth: 2,
-    borderColor: "#7c4dff",
+    borderColor: colors.primary,
   },
   personOptionText: {
-    color: "#e0e0e0",
-    fontSize: 16,
+    color: colors.fg,
+    fontSize: type.base,
+    flex: 1,
   },
+
+  // Form actions
   formActions: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    alignItems: "center",
+    gap: 12,
     marginTop: 8,
   },
   cancelButton: {
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 10,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: radius.lg,
   },
   cancelButtonText: {
-    color: "#999",
-    fontSize: 16,
-    fontWeight: "600",
+    color: colors.fgMuted,
+    fontSize: type.base,
+    fontWeight: type.weightMedium,
   },
-  saveButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 10,
+  saveButtonWrap: {
+    flex: 1,
   },
-  saveButtonText: {
-    color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  addButton: {
-    backgroundColor: "#2a2a4a",
-    paddingVertical: 18,
-    paddingHorizontal: 20,
-    borderRadius: 12,
+
+  addButtonWrap: {
     marginTop: 16,
-    borderLeftWidth: 4,
-    borderLeftColor: "#ff6b6b",
-  },
-  addButtonText: {
-    fontSize: 18,
-    color: "#e0e0e0",
-    fontWeight: "600",
   },
 });

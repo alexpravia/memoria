@@ -2,11 +2,13 @@
 //
 // Lets the co-user generate, review, edit, reorder, and approve the
 // next morning's AI briefing before it ships to the user. Visual style
-// mirrors `SensitivityFiltersScreen.tsx`.
+// follows the design-handoff PreviewScreen prototype (memoria-forms.jsx):
+// a shimmer "Generate" button, a breathing flower while assembling,
+// shimmer placeholder bars while loading, and slides revealed one-by-one
+// as numbered rows with a green check.
 
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Alert,
   Image,
   ScrollView,
@@ -16,6 +18,24 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withRepeat,
+  withSequence,
+  withTiming,
+  Easing,
+  cancelAnimation,
+} from "react-native-reanimated";
+import {
+  AnimatedEntrance,
+  SpringPressable,
+  BrandLoader,
+  AliveEmptyState,
+} from "../../motion/primitives";
+import { ShimmerButton } from "../../motion/ui";
+import { useIntensity } from "../../motion/IntensityContext";
+import { Logo } from "../../components/Logo";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useAuth } from "../../context/AuthContext";
 import {
@@ -32,6 +52,7 @@ import {
 import { logPreferenceSignal } from "../../lib/preferenceSignals";
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
 import Icon from "../../components/Icon";
+import { colors, radius, type as typeScale } from "../../theme";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -67,12 +88,78 @@ function formatDate(iso: string): string {
   });
 }
 
+// Status pill fill colors. Draft uses the brand purple; approved/delivered/
+// failed map to the design-handoff status palette.
 const STATUS_COLORS: Record<string, string> = {
-  draft: "#7c4dff",
-  approved: "#4caf50",
-  delivered: "#2196f3",
-  failed: "#ff6b6b",
+  draft: colors.primary,
+  approved: colors.success,
+  delivered: colors.info,
+  failed: colors.danger,
+  none: colors.surfaceRaised,
 };
+
+// A small breathing forget-me-not used inside the Generate button while
+// the briefing assembles. Mirrors the prototype's m-breathe glyph.
+function BreathingLogo({ size = 22 }: { size?: number }) {
+  const { on, speed } = useIntensity();
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    if (!on) {
+      scale.value = 1;
+      return;
+    }
+    const dur = 1400 / Math.max(speed, 0.5);
+    scale.value = withRepeat(
+      withSequence(
+        withTiming(1.08, { duration: dur, easing: Easing.inOut(Easing.ease) }),
+        withTiming(1, { duration: dur, easing: Easing.inOut(Easing.ease) })
+      ),
+      -1,
+      false
+    );
+    return () => cancelAnimation(scale);
+  }, [on, speed]);
+
+  const aStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  return (
+    <Animated.View style={aStyle}>
+      <Logo size={size} />
+    </Animated.View>
+  );
+}
+
+// Shimmer placeholder bar shown while a briefing loads. The bar sweeps a
+// soft lavender highlight across a sunk track (prototype ShimmerBar).
+function ShimmerBar({ width }: { width: number | `${number}%` }) {
+  const { on, speed } = useIntensity();
+  const x = useSharedValue(-1);
+
+  useEffect(() => {
+    if (!on) {
+      x.value = 0;
+      return;
+    }
+    const dur = 1400 / Math.max(speed, 0.5);
+    x.value = withRepeat(withTiming(1.8, { duration: dur, easing: Easing.inOut(Easing.ease) }), -1, false);
+    return () => cancelAnimation(x);
+  }, [on, speed]);
+
+  const sweepStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: `${x.value * 100}%` }, { skewX: "-12deg" }],
+  }));
+
+  return (
+    <View style={[styles.shimmerBar, { width }]}>
+      {on ? (
+        <Animated.View style={[styles.shimmerBarSweep, sweepStyle]} pointerEvents="none" />
+      ) : null}
+    </View>
+  );
+}
 
 export default function BriefingPreviewScreen({ navigation }: Props) {
   const { userId, coUserId } = useAuth();
@@ -275,193 +362,253 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
+        <BrandLoader caption="Loading briefing…" />
       </View>
     );
   }
 
   const status = briefing?.status ?? "none";
-  const statusColor = STATUS_COLORS[status] ?? "#999";
+  const statusColor = STATUS_COLORS[status] ?? colors.surfaceRaised;
   const validation = briefing ? validateBriefing(slides) : { ok: false, reason: "no briefing" };
   const canApprove =
     !!briefing && briefing.status === "draft" && validation.ok;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <TouchableOpacity onPress={() => navigation.goBack()}>
-        <Text style={styles.backText}>← Back</Text>
-      </TouchableOpacity>
-
-      <Text style={styles.title}>Briefing</Text>
-      <Text style={styles.subtitle}>{formatDate(date)}</Text>
-
-      {/* Date toggle — Today is for testing now; Tomorrow is the real morning briefing */}
-      <View style={styles.dateToggleRow}>
+      <AnimatedEntrance index={0}>
         <TouchableOpacity
-          style={[styles.dateToggle, date === todayISO() && styles.dateToggleActive]}
-          onPress={() => setDate(todayISO())}
+          onPress={() => navigation.goBack()}
+          style={styles.backRow}
+          accessibilityLabel="Go back"
         >
-          <Text style={[styles.dateToggleText, date === todayISO() && styles.dateToggleTextActive]}>
-            Today (test)
-          </Text>
+          <Icon name="back" size={20} color={colors.primarySoft} />
+          <Text style={styles.backText}>Back</Text>
         </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.dateToggle, date === tomorrowISO() && styles.dateToggleActive]}
-          onPress={() => setDate(tomorrowISO())}
-        >
-          <Text style={[styles.dateToggleText, date === tomorrowISO() && styles.dateToggleTextActive]}>
-            Tomorrow
-          </Text>
-        </TouchableOpacity>
-      </View>
 
-      {/* Status pill */}
-      <View style={styles.statusRow}>
-        <View style={[styles.statusPill, { backgroundColor: statusColor }]}>
-          <Text style={styles.statusPillText}>{status.toUpperCase()}</Text>
+        <Text style={styles.title}>Briefing Preview</Text>
+        <Text style={styles.subtitle}>{formatDate(date)}</Text>
+
+        {/* Date toggle — Today is for testing now; Tomorrow is the real morning briefing */}
+        <View style={styles.dateToggleRow}>
+          <SpringPressable
+            onPress={() => setDate(todayISO())}
+            style={[styles.dateToggle, date === todayISO() && styles.dateToggleActive]}
+          >
+            <Text style={[styles.dateToggleText, date === todayISO() && styles.dateToggleTextActive]}>
+              Today (test)
+            </Text>
+          </SpringPressable>
+          <SpringPressable
+            onPress={() => setDate(tomorrowISO())}
+            style={[styles.dateToggle, date === tomorrowISO() && styles.dateToggleActive]}
+          >
+            <Text style={[styles.dateToggleText, date === tomorrowISO() && styles.dateToggleTextActive]}>
+              Tomorrow
+            </Text>
+          </SpringPressable>
         </View>
-        {briefing ? (
-          <Text style={styles.metaText}>
-            {slides.length} slide{slides.length === 1 ? "" : "s"}
-          </Text>
-        ) : null}
-      </View>
+
+        {/* Status pill */}
+        <View style={styles.statusRow}>
+          <View style={[styles.statusPill, { backgroundColor: statusColor }]}>
+            <Text style={styles.statusPillText}>{status.toUpperCase()}</Text>
+          </View>
+          {briefing ? (
+            <Text style={styles.metaText}>
+              {slides.length} slide{slides.length === 1 ? "" : "s"}
+            </Text>
+          ) : null}
+        </View>
+      </AnimatedEntrance>
 
       {/* Generate / Regenerate */}
-      <TouchableOpacity
-        style={styles.generateButton}
-        onPress={handleGenerate}
-        disabled={generating}
-      >
-        {generating ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <>
-            <Icon name={briefing ? "refresh" : "sparkle"} size={18} color="#ffffff" accentColor="#ffffff" />
+      <AnimatedEntrance index={1}>
+        <ShimmerButton
+          hero
+          disabled={generating}
+          onPress={handleGenerate}
+          style={styles.generateButton}
+        >
+          <View style={styles.generateInner}>
+            {generating ? (
+              <BreathingLogo size={22} />
+            ) : (
+              <Icon
+                name={briefing ? "refresh" : "sparkle"}
+                size={20}
+                color="#ffffff"
+                accentColor="#ffffff"
+              />
+            )}
             <Text style={styles.generateButtonText}>
-              {briefing ? "Regenerate Briefing" : "Generate Briefing"}
+              {generating
+                ? "Assembling…"
+                : briefing
+                ? "Regenerate"
+                : "Generate briefing"}
             </Text>
-          </>
-        )}
-      </TouchableOpacity>
+          </View>
+        </ShimmerButton>
 
-      {error ? <Text style={styles.errorText}>{error}</Text> : null}
-      {briefing?.status === "failed" ? (
-        <Text style={styles.errorText}>
-          Generation failed previously. Try regenerating.
-        </Text>
-      ) : null}
+        {error ? <Text style={styles.errorText}>{error}</Text> : null}
+        {briefing?.status === "failed" ? (
+          <Text style={styles.errorText}>
+            Generation failed previously. Try regenerating.
+          </Text>
+        ) : null}
+      </AnimatedEntrance>
 
+      {/* Idle / empty card — breathing flower + gentle invitation */}
       {!briefing && !generating ? (
-        <Text style={styles.emptyText}>
-          No briefing yet for tomorrow. Tap above to generate one.
-        </Text>
+        <AnimatedEntrance index={2} cardMode>
+          <View style={styles.idleCard}>
+            <AliveEmptyState
+              message="No briefing yet for this date"
+              caption="Memo will weave today's people, memories, and reminders into a gentle briefing."
+            />
+          </View>
+        </AnimatedEntrance>
       ) : null}
 
-      {/* Slide cards */}
+      {/* Loading placeholder — shimmer bars while assembling */}
+      {generating ? (
+        <AnimatedEntrance index={2} cardMode>
+          <View style={styles.loadingCard}>
+            <ShimmerBar width="70%" />
+            <ShimmerBar width="92%" />
+            <ShimmerBar width="84%" />
+            <ShimmerBar width="60%" />
+          </View>
+        </AnimatedEntrance>
+      ) : null}
+
+      {/* Slide cards — each is an editable, reorderable, removable card,
+          revealed one-by-one with a numbered chip + green check. */}
+      {slides.length > 0 ? (
+        <AnimatedEntrance index={2} cardMode>
+          <Text style={styles.readyLabel}>
+            {slides.length} card{slides.length === 1 ? "" : "s"} ready
+          </Text>
+        </AnimatedEntrance>
+      ) : null}
+
       {slides.map((slide, index) => {
         const isDirty = dirtyIndices.has(index);
         return (
-          <View key={index} style={[styles.slideCard, isDirty && styles.slideCardDirty]}>
-            <View style={styles.slideHeader}>
-              <View style={styles.kindBadge}>
-                <Text style={styles.kindBadgeText}>{slide.kind}</Text>
+          <AnimatedEntrance key={index} index={index + 3} cardMode>
+            <View style={[styles.slideCard, isDirty && styles.slideCardDirty]}>
+              <View style={styles.slideHeader}>
+                <View style={styles.numberChip}>
+                  <Text style={styles.numberChipText}>{index + 1}</Text>
+                </View>
+                <View style={styles.kindBadge}>
+                  <Text style={styles.kindBadgeText}>{slide.kind}</Text>
+                </View>
+                <Icon name="check" size={18} color={colors.success} />
+                <View style={styles.slideActions}>
+                  <SpringPressable
+                    onPress={() => moveSlide(index, -1)}
+                    disabled={index === 0}
+                    style={[styles.iconButton, index === 0 && styles.iconButtonDisabled]}
+                  >
+                    <Icon name="back" size={16} color={colors.primarySoft} />
+                  </SpringPressable>
+                  <SpringPressable
+                    onPress={() => moveSlide(index, 1)}
+                    disabled={index === slides.length - 1}
+                    style={[
+                      styles.iconButton,
+                      index === slides.length - 1 && styles.iconButtonDisabled,
+                    ]}
+                  >
+                    <Icon name="forward" size={16} color={colors.primarySoft} />
+                  </SpringPressable>
+                  <SpringPressable
+                    onPress={() => deleteSlide(index)}
+                    style={styles.iconButton}
+                  >
+                    <Icon name="close" size={16} color={colors.danger} />
+                  </SpringPressable>
+                </View>
               </View>
-              <Text style={styles.slideIndex}>#{index + 1}</Text>
-              <View style={styles.slideActions}>
-                <TouchableOpacity
-                  onPress={() => moveSlide(index, -1)}
-                  disabled={index === 0}
-                  style={[
-                    styles.iconButton,
-                    index === 0 && styles.iconButtonDisabled,
-                  ]}
-                >
-                  <Text style={styles.iconButtonText}>▲</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => moveSlide(index, 1)}
-                  disabled={index === slides.length - 1}
-                  style={[
-                    styles.iconButton,
-                    index === slides.length - 1 && styles.iconButtonDisabled,
-                  ]}
-                >
-                  <Text style={styles.iconButtonText}>▼</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={() => deleteSlide(index)}
-                  style={styles.iconButton}
-                >
-                  <Text style={styles.deleteIcon}>✕</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
 
-            {slide.photo_url ? (
-              <SlideThumbnail
-                uri={slide.photo_url}
-                onPress={() => openLightbox({ photoUrl: slide.photo_url! })}
+              {slide.photo_url ? (
+                <SlideThumbnail
+                  uri={slide.photo_url}
+                  onPress={() => openLightbox({ photoUrl: slide.photo_url! })}
+                />
+              ) : null}
+
+              <Text style={styles.fieldLabel}>Title</Text>
+              <TextInput
+                style={styles.input}
+                value={slide.title}
+                placeholderTextColor={colors.fgMuted}
+                onChangeText={(v) => editField(index, "title", v)}
               />
-            ) : null}
 
-            <Text style={styles.fieldLabel}>Title</Text>
-            <TextInput
-              style={styles.input}
-              value={slide.title}
-              onChangeText={(v) => editField(index, "title", v)}
-            />
+              <Text style={styles.fieldLabel}>Body</Text>
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                value={slide.body}
+                placeholderTextColor={colors.fgMuted}
+                onChangeText={(v) => editField(index, "body", v)}
+                multiline
+              />
 
-            <Text style={styles.fieldLabel}>Body</Text>
-            <TextInput
-              style={[styles.input, styles.multiline]}
-              value={slide.body}
-              onChangeText={(v) => editField(index, "body", v)}
-              multiline
-            />
-
-            <Text style={styles.fieldLabel}>Spoken (TTS)</Text>
-            <TextInput
-              style={[styles.input, styles.multiline]}
-              value={slide.tts_text}
-              onChangeText={(v) => editField(index, "tts_text", v)}
-              multiline
-            />
-          </View>
+              <Text style={styles.fieldLabel}>Spoken (TTS)</Text>
+              <TextInput
+                style={[styles.input, styles.multiline]}
+                value={slide.tts_text}
+                placeholderTextColor={colors.fgMuted}
+                onChangeText={(v) => editField(index, "tts_text", v)}
+                multiline
+              />
+            </View>
+          </AnimatedEntrance>
         );
       })}
 
       {/* Bottom actions */}
       {briefing ? (
-        <View style={styles.bottomRow}>
-          <TouchableOpacity
-            style={[styles.saveButton, dirtyIndices.size === 0 && styles.disabled]}
-            onPress={handleSave}
-            disabled={dirtyIndices.size === 0 || saving}
-          >
-            <Text style={styles.saveButtonText}>
-              {saving ? "Saving…" : "Save Changes"}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.approveButton, !canApprove && styles.disabled]}
-            onPress={handleApprove}
-            disabled={!canApprove}
-          >
-            <Text style={styles.approveButtonText}>
-              {briefing.status === "approved"
-                ? "Approved"
-                : briefing.status === "delivered"
-                ? "Delivered"
-                : "Approve"}
-            </Text>
-          </TouchableOpacity>
-        </View>
+        <AnimatedEntrance index={slides.length + 3} cardMode>
+          <View style={styles.bottomRow}>
+            <SpringPressable
+              disabled={dirtyIndices.size === 0 || saving}
+              onPress={handleSave}
+              style={[styles.saveButton, dirtyIndices.size === 0 && styles.disabled]}
+            >
+              <Text style={styles.saveButtonText}>
+                {saving ? "Saving…" : "Save Changes"}
+              </Text>
+            </SpringPressable>
+            <ShimmerButton
+              hero
+              disabled={!canApprove}
+              onPress={handleApprove}
+              style={[styles.approveButton, !canApprove && styles.disabled]}
+            >
+              <View style={styles.approveInner}>
+                {briefing.status === "approved" ? (
+                  <Icon name="check" size={20} color="#ffffff" accentColor="#ffffff" />
+                ) : null}
+                <Text style={styles.approveButtonText}>
+                  {briefing.status === "approved"
+                    ? "Approved"
+                    : briefing.status === "delivered"
+                    ? "Delivered"
+                    : "Approve"}
+                </Text>
+              </View>
+            </ShimmerButton>
+          </View>
+
+          {!validation.ok ? (
+            <Text style={styles.warnText}>{validation.reason}</Text>
+          ) : null}
+        </AnimatedEntrance>
       ) : null}
 
-      {!validation.ok && briefing ? (
-        <Text style={styles.warnText}>{validation.reason}</Text>
-      ) : null}
       {lightbox}
     </ScrollView>
   );
@@ -485,7 +632,7 @@ function SlideThumbnail({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   content: {
     padding: 32,
@@ -496,23 +643,28 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
-  backText: {
-    color: "#b388ff",
-    fontSize: 16,
+  backRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
     marginBottom: 16,
   },
+  backText: {
+    color: colors.primarySoft,
+    fontSize: typeScale.base,
+  },
   title: {
-    fontSize: 28,
-    fontWeight: "bold",
-    color: "#b388ff",
+    fontSize: typeScale.title,
+    fontWeight: typeScale.weightBold,
+    color: colors.primarySoft,
     marginBottom: 4,
   },
   subtitle: {
-    fontSize: 16,
-    color: "#999",
-    marginBottom: 16,
+    fontSize: typeScale.base,
+    color: colors.fgMuted,
+    marginBottom: 18,
   },
   dateToggleRow: {
     flexDirection: "row",
@@ -521,150 +673,182 @@ const styles = StyleSheet.create({
   },
   dateToggle: {
     paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: "#2a2a4a",
-    borderWidth: 1,
-    borderColor: "#444",
+    paddingVertical: 9,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
   },
   dateToggleActive: {
-    backgroundColor: "#7c4dff",
-    borderColor: "#7c4dff",
+    backgroundColor: colors.primary,
   },
   dateToggleText: {
-    color: "#999",
-    fontSize: 13,
-    fontWeight: "600",
+    color: colors.fgMuted,
+    fontSize: typeScale.xs,
+    fontWeight: typeScale.weightMedium,
   },
   dateToggleTextActive: {
-    color: "#fff",
+    color: colors.fgStrong,
   },
   statusRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 20,
+    marginBottom: 18,
   },
   statusPill: {
     paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 12,
+    paddingVertical: 5,
+    borderRadius: radius.sm,
     marginRight: 12,
   },
   statusPillText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "700",
+    color: colors.fgStrong,
+    fontSize: typeScale.xxs,
+    fontWeight: typeScale.weightBold,
+    letterSpacing: 0.6,
   },
   metaText: {
-    color: "#999",
-    fontSize: 13,
+    color: colors.fgMuted,
+    fontSize: typeScale.xs,
   },
   generateButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 12,
+    marginBottom: 8,
+  },
+  generateInner: {
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
-    gap: 8,
-    marginBottom: 16,
+    justifyContent: "center",
+    gap: 10,
   },
   generateButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "600",
+    color: colors.fgStrong,
+    fontSize: typeScale.lg,
+    fontWeight: typeScale.weightMedium,
   },
   errorText: {
-    color: "#ff6b6b",
-    fontSize: 14,
-    marginBottom: 12,
+    color: colors.danger,
+    fontSize: typeScale.sm,
+    marginTop: 12,
   },
   warnText: {
-    color: "#ffb86b",
-    fontSize: 13,
+    color: colors.primarySoft,
+    fontSize: typeScale.xs,
     marginTop: 12,
     textAlign: "center",
   },
-  emptyText: {
-    color: "#666",
-    fontSize: 15,
-    textAlign: "center",
-    marginVertical: 24,
+  idleCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    marginTop: 18,
+  },
+  loadingCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    paddingHorizontal: 18,
+    paddingVertical: 22,
+    marginTop: 18,
+  },
+  shimmerBar: {
+    position: "relative",
+    overflow: "hidden",
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceSunk,
+    marginBottom: 14,
+  },
+  shimmerBarSweep: {
+    position: "absolute",
+    top: 0,
+    bottom: 0,
+    width: "60%",
+    backgroundColor: colors.primarySoft + "33",
+  },
+  readyLabel: {
+    fontSize: typeScale.xs,
+    fontWeight: typeScale.weightBold,
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+    color: colors.primarySoft,
+    marginTop: 20,
+    marginBottom: 12,
   },
   slideCard: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
     padding: 16,
     marginBottom: 12,
     borderLeftWidth: 4,
-    borderLeftColor: "#7c4dff",
+    borderLeftColor: colors.primary,
   },
   slideCardDirty: {
-    borderLeftColor: "#ffb86b",
+    borderLeftColor: colors.primarySoft,
   },
   slideHeader: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 8,
     marginBottom: 12,
   },
+  numberChip: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: colors.surfaceSunk,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  numberChipText: {
+    color: colors.primarySoft,
+    fontSize: typeScale.xs,
+    fontWeight: typeScale.weightBold,
+  },
   kindBadge: {
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     paddingHorizontal: 8,
     paddingVertical: 4,
-    borderRadius: 6,
-    marginRight: 8,
+    borderRadius: radius.sm,
   },
   kindBadgeText: {
-    color: "#b388ff",
-    fontSize: 11,
-    fontWeight: "700",
+    color: colors.primarySoft,
+    fontSize: typeScale.xxs,
+    fontWeight: typeScale.weightBold,
     textTransform: "uppercase",
-  },
-  slideIndex: {
-    color: "#666",
-    fontSize: 12,
-    flex: 1,
   },
   slideActions: {
     flexDirection: "row",
+    alignItems: "center",
+    marginLeft: "auto",
+    gap: 2,
   },
   iconButton: {
-    paddingHorizontal: 8,
+    paddingHorizontal: 6,
     paddingVertical: 4,
-    marginLeft: 4,
   },
   iconButtonDisabled: {
     opacity: 0.3,
   },
-  iconButtonText: {
-    color: "#b388ff",
-    fontSize: 16,
-  },
-  deleteIcon: {
-    color: "#ff6b6b",
-    fontSize: 16,
-  },
   thumbnail: {
     width: "100%",
     height: 140,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     marginBottom: 12,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   fieldLabel: {
-    color: "#999",
-    fontSize: 12,
-    marginBottom: 4,
-    marginTop: 4,
+    color: colors.primarySoft,
+    fontSize: typeScale.xxs,
+    fontWeight: typeScale.weightBold,
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    marginTop: 6,
     textTransform: "uppercase",
   },
   input: {
-    backgroundColor: "#1a1a2e",
-    borderRadius: 8,
+    backgroundColor: colors.surfaceSunk,
+    borderRadius: radius.sm,
     padding: 12,
-    fontSize: 15,
-    color: "#e0e0e0",
+    fontSize: typeScale.base,
+    color: colors.fgStrong,
     marginBottom: 8,
   },
   multiline: {
@@ -674,32 +858,36 @@ const styles = StyleSheet.create({
   bottomRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginTop: 16,
+    marginTop: 18,
     gap: 12,
   },
   saveButton: {
     flex: 1,
-    backgroundColor: "#2a2a4a",
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: colors.surface,
+    paddingVertical: 16,
+    borderRadius: radius.lg,
     alignItems: "center",
+    justifyContent: "center",
   },
   saveButtonText: {
-    color: "#e0e0e0",
-    fontSize: 16,
-    fontWeight: "600",
+    color: colors.fg,
+    fontSize: typeScale.lg,
+    fontWeight: typeScale.weightMedium,
   },
   approveButton: {
     flex: 1,
-    backgroundColor: "#4caf50",
-    paddingVertical: 14,
-    borderRadius: 12,
+    backgroundColor: colors.success,
+  },
+  approveInner: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
   approveButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
+    color: colors.fgStrong,
+    fontSize: typeScale.lg,
+    fontWeight: typeScale.weightBold,
   },
   disabled: {
     opacity: 0.4,
