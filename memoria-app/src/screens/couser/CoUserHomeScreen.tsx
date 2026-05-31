@@ -153,6 +153,25 @@ function ActionCard({
   );
 }
 
+function tomorrowISO(): string {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+type BriefingStatus = "draft" | "approved" | "delivered" | "failed" | null;
+
+const BRIEFING_SUBTITLES: Record<NonNullable<BriefingStatus> | "none", string> = {
+  draft:     "Ready to review",
+  approved:  "Approved ✓",
+  delivered: "Delivered ✓",
+  failed:    "Generation failed — tap to fix",
+  none:      "Generates automatically overnight",
+};
+
 export default function CoUserHomeScreen({ navigation }: Props) {
   const { userId, signOut } = useAuth();
   const [userName, setUserName] = useState("");
@@ -164,6 +183,7 @@ export default function CoUserHomeScreen({ navigation }: Props) {
   });
   const [pendingFlags, setPendingFlags] = useState(0);
   const [hasUserLogin, setHasUserLogin] = useState(false);
+  const [briefingStatus, setBriefingStatus] = useState<BriefingStatus>(null);
 
   useEffect(() => {
     if (userId) loadData();
@@ -223,6 +243,16 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       .eq("status", "pending");
 
     setPendingFlags(flagCount || 0);
+
+    // Check tomorrow's briefing status so the hero card reflects reality.
+    const { data: briefingRow } = await supabase
+      .from("briefings")
+      .select("status")
+      .eq("user_id", userId)
+      .eq("briefing_date", tomorrowISO())
+      .maybeSingle();
+
+    setBriefingStatus((briefingRow?.status as BriefingStatus) ?? null);
   }
 
   async function handleSignOut() {
@@ -240,8 +270,8 @@ export default function CoUserHomeScreen({ navigation }: Props) {
       cards: [
         {
           icon: "sparkle",
-          label: "Generate Today's Briefing",
-          subtitle: "AI-assembled · ready to review",
+          label: "Tomorrow's Briefing",
+          subtitle: BRIEFING_SUBTITLES[briefingStatus ?? "none"],
           hero: true,
           onPress: () => navigation.navigate("BriefingPreview"),
           testID: automationIds.briefingPreviewButton,

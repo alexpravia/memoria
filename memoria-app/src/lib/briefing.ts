@@ -195,9 +195,10 @@ export async function regenerateBriefing(
 
 // ─── getTodaysBriefing ──────────────────────────────────────────────
 //
-// Fetches today's briefing for the user. Only returns rows in
-// `approved` or `delivered` status — drafts and failures fall back to
-// the procedural builder so the user is never blocked.
+// Fetches today's briefing for the user. Returns any non-failed row —
+// draft, approved, or delivered — so the patient sees the AI briefing
+// automatically without requiring the co-user to approve it first.
+// Only `failed` rows fall back to the procedural builder.
 
 export async function getTodaysBriefing(
   userId: string
@@ -208,7 +209,7 @@ export async function getTodaysBriefing(
       .select("id, user_id, briefing_date, slides, status")
       .eq("user_id", userId)
       .eq("briefing_date", todayISO())
-      .in("status", ["approved", "delivered"])
+      .in("status", ["draft", "approved", "delivered"])
       .maybeSingle();
     if (error) {
       console.warn("getTodaysBriefing: query failed:", error.message);

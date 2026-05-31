@@ -39,7 +39,6 @@ import { Logo } from "../../components/Logo";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { useAuth } from "../../context/AuthContext";
 import {
-  approveBriefing,
   generateBriefing,
   getBriefingForDate,
   reorderSlides,
@@ -50,6 +49,7 @@ import {
   type BriefingSlide,
 } from "../../lib/briefing";
 import { logPreferenceSignal } from "../../lib/preferenceSignals";
+// logPreferenceSignal is retained for briefing_regenerated and briefing_slide_* signals.
 import { usePhotoLightbox, useTapToOpen } from "../../components/usePhotoLightbox";
 import Icon from "../../components/Icon";
 import { colors, radius, type as typeScale } from "../../theme";
@@ -333,31 +333,6 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
     }
   }
 
-  async function handleApprove() {
-    if (!briefing || !coUserId) return;
-    const v = validateBriefing(slides);
-    if (!v.ok) {
-      Alert.alert("Cannot approve", v.reason);
-      return;
-    }
-    const res = await approveBriefing(briefing.id, coUserId);
-    if (!res.ok) {
-      Alert.alert("Approve failed", res.error ?? "Unknown error");
-      return;
-    }
-    if (userId) {
-      logPreferenceSignal({
-        userId,
-        coUserId,
-        signalType: "briefing_approved",
-        referenceId: briefing.id,
-        content: slides.map((s) => s.title).join(" | "),
-        metadata: { date: briefing.briefing_date, slide_count: slides.length },
-      });
-    }
-    Alert.alert("Approved", "The briefing will be shown tomorrow.");
-    load();
-  }
 
   if (loading) {
     return (
@@ -370,8 +345,6 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
   const status = briefing?.status ?? "none";
   const statusColor = STATUS_COLORS[status] ?? colors.surfaceRaised;
   const validation = briefing ? validateBriefing(slides) : { ok: false, reason: "no briefing" };
-  const canApprove =
-    !!briefing && briefing.status === "draft" && validation.ok;
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -445,7 +418,7 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
                 ? "Assembling…"
                 : briefing
                 ? "Regenerate"
-                : "Generate briefing"}
+                : "Generate now"}
             </Text>
           </View>
         </ShimmerButton>
@@ -458,13 +431,13 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
         ) : null}
       </AnimatedEntrance>
 
-      {/* Idle / empty card — breathing flower + gentle invitation */}
+      {/* Idle / empty card — shown when no briefing exists yet for this date */}
       {!briefing && !generating ? (
         <AnimatedEntrance index={2} cardMode>
           <View style={styles.idleCard}>
             <AliveEmptyState
               message="No briefing yet for this date"
-              caption="Memo will weave today's people, memories, and reminders into a gentle briefing."
+              caption="Memo generates the briefing automatically at 2 AM. You can also generate one now using the button above."
             />
           </View>
         </AnimatedEntrance>
@@ -569,40 +542,18 @@ export default function BriefingPreviewScreen({ navigation }: Props) {
         );
       })}
 
-      {/* Bottom actions */}
-      {briefing ? (
+      {/* Bottom actions — save edits only; no approval required */}
+      {briefing && dirtyIndices.size > 0 ? (
         <AnimatedEntrance index={slides.length + 3} cardMode>
-          <View style={styles.bottomRow}>
-            <SpringPressable
-              disabled={dirtyIndices.size === 0 || saving}
-              onPress={handleSave}
-              style={[styles.saveButton, dirtyIndices.size === 0 && styles.disabled]}
-            >
-              <Text style={styles.saveButtonText}>
-                {saving ? "Saving…" : "Save Changes"}
-              </Text>
-            </SpringPressable>
-            <ShimmerButton
-              hero
-              disabled={!canApprove}
-              onPress={handleApprove}
-              style={[styles.approveButton, !canApprove && styles.disabled]}
-            >
-              <View style={styles.approveInner}>
-                {briefing.status === "approved" ? (
-                  <Icon name="check" size={20} color="#ffffff" accentColor="#ffffff" />
-                ) : null}
-                <Text style={styles.approveButtonText}>
-                  {briefing.status === "approved"
-                    ? "Approved"
-                    : briefing.status === "delivered"
-                    ? "Delivered"
-                    : "Approve"}
-                </Text>
-              </View>
-            </ShimmerButton>
-          </View>
-
+          <SpringPressable
+            disabled={saving}
+            onPress={handleSave}
+            style={styles.saveButton}
+          >
+            <Text style={styles.saveButtonText}>
+              {saving ? "Saving…" : "Save Changes"}
+            </Text>
+          </SpringPressable>
           {!validation.ok ? (
             <Text style={styles.warnText}>{validation.reason}</Text>
           ) : null}
@@ -855,39 +806,18 @@ const styles = StyleSheet.create({
     minHeight: 64,
     textAlignVertical: "top",
   },
-  bottomRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: 18,
-    gap: 12,
-  },
   saveButton: {
-    flex: 1,
     backgroundColor: colors.surface,
     paddingVertical: 16,
     borderRadius: radius.lg,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: 18,
   },
   saveButtonText: {
     color: colors.fg,
     fontSize: typeScale.lg,
     fontWeight: typeScale.weightMedium,
-  },
-  approveButton: {
-    flex: 1,
-    backgroundColor: colors.success,
-  },
-  approveInner: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-  },
-  approveButtonText: {
-    color: colors.fgStrong,
-    fontSize: typeScale.lg,
-    fontWeight: typeScale.weightBold,
   },
   disabled: {
     opacity: 0.4,

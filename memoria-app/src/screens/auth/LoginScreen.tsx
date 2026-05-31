@@ -210,7 +210,10 @@ const ORB_CONFIGS: OrbConfig[] = Array.from({ length: 16 }, (_, i) => ({
 function Orb({ cfg, on, speed }: { cfg: OrbConfig; on: boolean; speed: number }) {
   // Rise from just below the bottom (start) to above the top (end).
   const travel = SCREEN_H + cfg.size + 40;
-  const ty = useSharedValue(0);
+  // Pre-position mid-flight so orbs are already moving on first render.
+  const elapsed = -cfg.delaySec; // seconds already elapsed (delaySec is negative)
+  const initProgress = (elapsed % cfg.durSec) / cfg.durSec;
+  const ty = useSharedValue(-initProgress * travel);
 
   useEffect(() => {
     if (!on) {
@@ -218,12 +221,16 @@ function Orb({ cfg, on, speed }: { cfg: OrbConfig; on: boolean; speed: number })
       return;
     }
     const dur = (cfg.durSec * 1000) / speed;
-    const delayMs = -cfg.delaySec * 1000; // positive launch delay
-    ty.value = 0;
-    ty.value = withDelay(
-      delayMs,
+    const progress = (elapsed % cfg.durSec) / cfg.durSec;
+    ty.value = -progress * travel;
+    // Complete the current partial rise, then loop from bottom to top forever.
+    ty.value = withSequence(
+      withTiming(-travel, { duration: dur * (1 - progress), easing: Easing.linear }),
       withRepeat(
-        withTiming(-travel, { duration: dur, easing: Easing.linear }),
+        withSequence(
+          withTiming(0, { duration: 1 }),
+          withTiming(-travel, { duration: dur, easing: Easing.linear })
+        ),
         -1,
         false
       )
