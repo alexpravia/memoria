@@ -3,8 +3,9 @@
 .DS_Store
 /error-photos/
 
-# monorepo: ignore root node_modules (workspace packages use their own)
+# monorepo: ignore all node_modules at every level
 node_modules/
+**/node_modules/
 
 # supabase temp files
 /apps/mobile/supabase/.temp/
