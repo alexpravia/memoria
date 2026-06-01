@@ -3,11 +3,12 @@
 // Side-effect: initializes the @memoria/core supabase client for the kiosk.
 import "@/lib/supabase";
 
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { askAssistant, useAuth } from "@memoria/core";
 import * as tts from "@/lib/tts-web";
 import { Logo } from "@/components/Logo";
 import Icon from "@/components/Icon";
+import { createStt, isSttSupported, type SttHandle } from "@/lib/voice/stt";
 
 interface Message {
   role: "user" | "memo";
@@ -21,52 +22,108 @@ export default function AssistantClient() {
   const [input, setInput] = useState("");
   const [thinking, setThinking] = useState(false);
   const [speaking, setSpeaking] = useState(false);
+  const [listening, setListening] = useState(false);
+  const [sttSupported, setSttSupported] = useState(false);
   const conversationIdRef = useRef<string | undefined>(undefined);
   const inputRef = useRef<HTMLInputElement>(null);
+  const sttRef = useRef<SttHandle | null>(null);
 
-  const handleSend = useCallback(async () => {
-    const text = input.trim();
-    if (!text || thinking) return;
+  useEffect(() => {
+    setSttSupported(isSttSupported());
+    return () => {
+      try {
+        sttRef.current?.abort();
+      } catch {
+        /* ignore */
+      }
+    };
+  }, []);
 
-    const uid = userId ?? session?.user.id;
-    if (!uid) {
+  // Reset the conversation thread when the signed-in user changes, so a
+  // second user on the same kiosk session can't inherit the prior thread.
+  const authUid = userId ?? session?.user?.id ?? null;
+  useEffect(() => {
+    conversationIdRef.current = undefined;
+  }, [authUid]);
+
+  const sendMessage = useCallback(
+    async (raw: string) => {
+      const text = raw.trim();
+      if (!text || thinking) return;
+
+      const uid = userId ?? session?.user.id;
+      if (!uid) {
+        setMessages((m) => [
+          ...m,
+          { role: "memo", text: "Please sign in to talk to Memo." },
+        ]);
+        return;
+      }
+
+      setInput("");
+      setMessages((m) => [...m, { role: "user", text }]);
+      setThinking(true);
+
+      const resp = await askAssistant(uid, text, conversationIdRef.current);
+      conversationIdRef.current = resp.conversationId;
+      setThinking(false);
+
+      if (resp.error && !resp.answer) {
+        setMessages((m) => [
+          ...m,
+          { role: "memo", text: "I had trouble with that. Please try again." },
+        ]);
+        return;
+      }
+
+      const answer = resp.answer;
       setMessages((m) => [
         ...m,
-        {
-          role: "memo",
-          text: "Please sign in to talk to Memo.",
+        { role: "memo", text: answer, photos: resp.photos },
+      ]);
+
+      setSpeaking(true);
+      await tts.speak(answer, {
+        onDone: () => setSpeaking(false),
+      });
+    },
+    [thinking, userId, session]
+  );
+
+  const handleSend = useCallback(() => {
+    void sendMessage(input);
+  }, [sendMessage, input]);
+
+  // Voice input — speak into the existing text box. A fresh recognizer is
+  // created per press so its callbacks close over the latest sendMessage.
+  const handleMic = useCallback(() => {
+    if (listening) {
+      sttRef.current?.stop();
+      return;
+    }
+    if (!isSttSupported()) return;
+    // Interrupt any answer Memo is speaking before we listen.
+    void tts.stop();
+    setSpeaking(false);
+
+    const stt = createStt(
+      {
+        onStart: () => setListening(true),
+        onPartial: (t) => setInput(t),
+        onFinal: (t) => {
+          setListening(false);
+          setInput("");
+          void sendMessage(t);
         },
-      ]);
-      return;
-    }
-
-    setInput("");
-    setMessages((m) => [...m, { role: "user", text }]);
-    setThinking(true);
-
-    const resp = await askAssistant(uid, text, conversationIdRef.current);
-    conversationIdRef.current = resp.conversationId;
-    setThinking(false);
-
-    if (resp.error && !resp.answer) {
-      setMessages((m) => [
-        ...m,
-        { role: "memo", text: "I had trouble with that. Please try again." },
-      ]);
-      return;
-    }
-
-    const answer = resp.answer;
-    setMessages((m) => [
-      ...m,
-      { role: "memo", text: answer, photos: resp.photos },
-    ]);
-
-    setSpeaking(true);
-    await tts.speak(answer, {
-      onDone: () => setSpeaking(false),
-    });
-  }, [input, thinking, userId, session]);
+        onNoSpeech: () => setListening(false),
+        onEnd: () => setListening(false),
+        onError: () => setListening(false),
+      },
+      { continuous: false }
+    );
+    sttRef.current = stt;
+    stt.start();
+  }, [listening, sendMessage]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -245,7 +302,7 @@ export default function AssistantClient() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
-          placeholder="Type a message to Memo…"
+          placeholder={listening ? "Listening…" : "Type a message to Memo…"}
           disabled={thinking}
           style={{
             flex: 1,
@@ -259,6 +316,34 @@ export default function AssistantClient() {
             opacity: thinking ? 0.6 : 1,
           }}
         />
+        {sttSupported && (
+          <button
+            onClick={handleMic}
+            aria-label={listening ? "Stop listening" : "Talk to Memo"}
+            disabled={thinking}
+            style={{
+              background: listening
+                ? "var(--color-danger)"
+                : "var(--color-surface)",
+              border: "none",
+              borderRadius: "var(--radius-full)",
+              width: 52,
+              height: 52,
+              cursor: thinking ? "not-allowed" : "pointer",
+              opacity: thinking ? 0.5 : 1,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+            }}
+          >
+            <Icon
+              name="listen"
+              size={24}
+              color={listening ? "white" : "var(--color-primary-soft)"}
+            />
+          </button>
+        )}
         <button
           onClick={handleSend}
           disabled={!input.trim() || thinking}

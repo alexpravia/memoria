@@ -219,3 +219,38 @@ In parallel, a design/motion system was integrated: a `src/motion/` module (`Int
 - Verify the reanimated 4 upgrade at runtime — confirm briefing slide-in animations still behave; v3→v4 changes a few APIs.
 - Remaining SDK-54 version drift is still unaligned (`expo` 54.0.33 vs 54.0.35, `expo-asset`, `expo-image-picker`, `expo-notifications`, `@types/react` 18 vs 19, `typescript` 5.7 vs 5.9) — realign deliberately with `npx expo install --fix -- --legacy-peer-deps`, testing after.
 - Phase 5 of `LLM-plan.md` is intentionally paused: facial recognition first (AWS Rekognition — the GPT people-ID is a stub the `media_people` schema is ready to receive), then key_facts chunking, LLM re-ranking, memory consolidation, and the document pipeline.
+
+---
+
+## June 1, 2026
+
+### W2 — Kiosk Voice Stack
+
+The full W2 voice loop was built for `apps/kiosk` and validated end-to-end (Hey Memo → listen → nova answer → idle confirmed working in Chrome).
+
+**State machine.** A pure reducer (`lib/voice/machine.ts`) drives the loop: `idle → wake → listening → thinking → speaking → idle`. It is the single source of truth for concurrency rules: `generation` bumps on every turn abandonment (cancel/barge-in/silence/error) so in-flight async work can be dropped; the happy path never bumps it. 24 unit tests cover every transition, the silence path, barge-in, wake-while-speaking (no-op by design), and the race-guard invariant. vitest was wired into `apps/kiosk` and the root `npm test` now runs both `packages/core` (116 tests) and `apps/kiosk` (24 tests).
+
+**Voice loop hook.** `lib/voice/useVoiceLoop.ts` binds the reducer to browser side effects: STT, wake word, TTS (`tts-web.ts`), `askAssistant`, earcons, and navigation intents. Key concurrency properties enforced: generation race guard on `askAssistant` and TTS callbacks; barge-in stops TTS via effect cleanup; wake word paused for the whole non-idle turn and re-armed only after a post-speak debounce (with an `isSpeaking()` poll so nova's own audio never retriggers the wake phrase); 20-second `thinking` watchdog so a hung `askAssistant` doesn't strand the kiosk; spacebar PTT (skips buttons/links); per-user `conversationId` reset on auth change; mic-permission errors speak an actionable message instead of the generic retry fallback.
+
+**STT.** `lib/voice/stt.ts` wraps `SpeechRecognition` (PTT default, Safari→PTT, Firefox→unsupported). A module-level `activeRec` guard ensures only one recognizer holds the mic at a time — navigating between pages can't orphan a session.
+
+**Wake word.** `lib/voice/wakeword.ts` uses `SpeechRecognition` in continuous mode (no dependencies, no account, no model files). Scans interim transcripts for "hey memo" (+ phonetic variants) while idle; restarts via a watchdog when Chrome auto-terminates the session (~5 min); degrades to push-to-talk in Firefox. Picovoice (proper acoustic wake word) is documented in `future-implementations.md` for when a custom-domain email is available.
+
+**Audio unlock.** `lib/audio-unlock.ts` performs the gesture-driven unlock sequence (AudioContext resume, silent buffer, speechSynthesis prime, Fullscreen request, Wake Lock). `components/AudioUnlockGate.tsx` renders a full-screen "Touch to begin" overlay providing `useAudioUnlocked()` to the tree. The home greeting speaks immediately after unlock.
+
+**UI.** `components/VoiceOrb.tsx` is an animated Logo button: slow breathing (idle), ring pulse + glow (listening), dim pulse (thinking), expanding ring (speaking). CSS keyframes live in `globals.css`. `app/HomeClient.tsx` is the new ambient home — orb + live caption + nav shortcuts. `app/briefing/` is a new route with auto-advancing slides: `speak(tts_text, { onDone: advance })`, `prewarm(nextSlide)` during current slide, `duration_ms` max-dwell fallback timer, next/again/stop controls (buttons + one-shot voice command mic), `markDelivered` on completion. The assistant page gained a mic button that runs a one-shot STT session and sends the transcript.
+
+**tts-web.ts hardening.** Added `speakEpoch` (monotonic counter bumped by `stop()`) so a barge-in during the audio-fetch gap cancels the about-to-play audio — the previous window where an abandoned answer could play anyway. Added `currentBlobUrl` tracking so every `stop()` revokes the blob URL, preventing an unbounded memory leak on a long-running kiosk. Empty/blank `speak()` calls now fire `onDone` so briefing advance never stalls. Read-path briefing validation added (`validateBriefing` called before rendering). `Providers.tsx` updated to wrap the app in `AudioUnlockGate`.
+
+**Multi-agent adversarial review.** After the initial build, a 32-agent workflow fanned out across 4 lenses (race-guard concurrency, React 19/Next 16 correctness, briefing auto-advance, API-contract integration), raised 28 findings, and confirmed 15 real. All real-impact findings were fixed in the same session.
+
+**future-implementations.md** created at the repo root: Picovoice wake word, hardware partnership wake word strategy, Phases 2–4, LLM Phase 5, deferred kiosk polish, and infrastructure flags.
+
+### Security Note
+The `service_role` key was accidentally pasted into `.env.local` (second occurrence — also flagged May 30). It was cleared from the file immediately and `.env.local` is gitignored so it never reached the repo. Rotate the key in Supabase Dashboard → Settings → API before any production use.
+
+### Flags for Next Session
+- `AudioUnlockGate` ignores the `isAudioUnlocked()` sessionStorage flag on remount — gate re-shows within the same browser session on a hard reload. Fix: add a mount effect `if (isAudioUnlocked()) setUnlocked(true)`. Low priority for now.
+- Wake word false triggers: "hey memo" appearing in any sentence fires the wake. Acceptable for demo; Picovoice (acoustic) is the proper fix — see `future-implementations.md`.
+- Briefing "pause" restarts the current slide from the beginning (no true resume). Acceptable for the patient audience; documented in `future-implementations.md`.
+- Supabase project risks pausing due to inactivity — hit it weekly or set up a keep-alive ping.

@@ -42,6 +42,16 @@ export interface SpeakOpts {
 
 let currentAudio: HTMLAudioElement | null = null;
 let isSpeakingFlag = false;
+// Monotonic epoch so a stop()/new speak() issued *during* an in-flight
+// speak()'s async fetch aborts it before any audio element is created or
+// played. Without this, a barge-in that lands while getOrFetchAudio is
+// still resolving cannot stop the about-to-start audio (currentAudio is
+// still null), so the abandoned answer would play anyway.
+let speakEpoch = 0;
+// The object URL currently held by currentAudio (or an in-flight play).
+// Tracked so stop()/barge-in can revoke it instead of leaking one blob URL
+// (and its decoded bytes) per interruption over a long kiosk session.
+let currentBlobUrl: string | null = null;
 // In-memory LRU index: cacheKey → last_used_at timestamp.
 // The actual audio bytes live in the Cache API (persists across reloads).
 const cacheIndex = new Map<string, number>();
@@ -50,17 +60,25 @@ const cacheIndex = new Map<string, number>();
 
 export async function speak(text: string, opts: SpeakOpts = {}): Promise<void> {
   const trimmed = (text ?? "").trim();
-  if (!trimmed) return;
+  if (!trimmed) {
+    // Fire onDone so callers that chain on completion (briefing advance,
+    // SPEAK_DONE) never stall on an empty/blank utterance.
+    opts.onDone?.();
+    return;
+  }
 
   const voice = opts.voice ?? DEFAULT_VOICE;
   const model = opts.model ?? DEFAULT_MODEL;
 
   await stop();
+  // Capture *after* the internal stop() (which bumps the epoch) so we don't
+  // cancel ourselves; any later stop()/speak() will out-number this epoch.
+  const myEpoch = ++speakEpoch;
   isSpeakingFlag = true;
 
   try {
     const blobUrl = await getOrFetchAudio(trimmed, voice, model);
-    await playBlobUrl(blobUrl, trimmed, opts.onDone);
+    await playBlobUrl(blobUrl, trimmed, opts.onDone, myEpoch);
   } catch (err) {
     console.warn("tts-web.speak: falling back to speechSynthesis:", err);
     fallbackSpeak(trimmed, opts.onDone);
@@ -68,6 +86,8 @@ export async function speak(text: string, opts: SpeakOpts = {}): Promise<void> {
 }
 
 export async function stop(): Promise<void> {
+  // Invalidate any in-flight speak() still awaiting its audio fetch.
+  speakEpoch++;
   isSpeakingFlag = false;
 
   if (currentAudio) {
@@ -75,6 +95,12 @@ export async function stop(): Promise<void> {
     currentAudio = null;
     audio.pause();
     audio.src = "";
+  }
+
+  // Interrupting playback never fires 'ended', so revoke here too.
+  if (currentBlobUrl) {
+    URL.revokeObjectURL(currentBlobUrl);
+    currentBlobUrl = null;
   }
 
   try {
@@ -240,14 +266,23 @@ async function evictIfNeeded(): Promise<void> {
 async function playBlobUrl(
   blobUrl: string,
   textForFallback: string,
-  onDone?: () => void
+  onDone?: () => void,
+  myEpoch?: number
 ): Promise<void> {
+  // A stop()/new speak() during getOrFetchAudio bumped the epoch — bail
+  // before we ever create or play the audio element.
+  if (myEpoch !== undefined && myEpoch !== speakEpoch) {
+    URL.revokeObjectURL(blobUrl);
+    return;
+  }
   const audio = new Audio(blobUrl);
   currentAudio = audio;
+  currentBlobUrl = blobUrl;
 
   const cleanup = () => {
     URL.revokeObjectURL(blobUrl);
     if (currentAudio === audio) currentAudio = null;
+    if (currentBlobUrl === blobUrl) currentBlobUrl = null;
     isSpeakingFlag = false;
   };
 

@@ -6,8 +6,8 @@
     "apps/*"
   ],
   "scripts": {
-    "test": "npm run test --workspace=packages/core",
-    "check": "npm run typecheck --workspace=apps/mobile && npm run test --workspace=packages/core"
+    "test": "npm run test --workspace=packages/core && npm run test --workspace=apps/kiosk",
+    "check": "npm run typecheck --workspace=apps/mobile && npm run typecheck --workspace=apps/kiosk && npm run test"
   },
   "devDependencies": {
     "@types/react": "~18.3.0"

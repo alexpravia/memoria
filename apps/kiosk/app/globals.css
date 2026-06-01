@@ -31,3 +31,79 @@ html, body {
 * {
   box-sizing: border-box;
 }
+
+/* ─── VoiceOrb — animated Logo states ──────────────────────────────── */
+.voice-orb {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.voice-orb__ring {
+  position: absolute;
+  inset: -14%;
+  border-radius: var(--radius-full);
+  pointer-events: none;
+  border: 3px solid var(--color-primary);
+  opacity: 0;
+}
+.voice-orb__logo {
+  display: inline-flex;
+  transform-origin: center;
+}
+
+/* idle → slow breathing */
+.voice-orb--idle .voice-orb__logo {
+  animation: orb-breathe 4s ease-in-out infinite;
+}
+/* listening → steady glow + held ring */
+.voice-orb--listening .voice-orb__ring {
+  opacity: 0.9;
+  border-color: var(--color-primary-soft);
+  animation: orb-listen 1.6s ease-in-out infinite;
+}
+.voice-orb--listening .voice-orb__logo {
+  filter: drop-shadow(0 0 16px var(--color-primary-soft));
+}
+/* thinking → gentle dim pulse */
+.voice-orb--thinking .voice-orb__logo {
+  animation: orb-breathe 1.1s ease-in-out infinite;
+  opacity: 0.85;
+}
+/* speaking → expanding ring pulses */
+.voice-orb--speaking .voice-orb__ring {
+  animation: orb-pulse 1.4s ease-out infinite;
+}
+.voice-orb--speaking .voice-orb__logo {
+  filter: drop-shadow(0 0 18px var(--color-primary));
+}
+/* error → red flash */
+.voice-orb--error .voice-orb__ring {
+  opacity: 0.9;
+  border-color: var(--color-danger);
+}
+
+@keyframes orb-breathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+}
+@keyframes orb-listen {
+  0%, 100% { transform: scale(1); opacity: 0.55; }
+  50% { transform: scale(1.08); opacity: 0.95; }
+}
+@keyframes orb-pulse {
+  0% { transform: scale(0.92); opacity: 0.8; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .voice-orb__logo,
+  .voice-orb__ring {
+    animation: none !important;
+  }
+}
