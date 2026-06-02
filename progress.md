@@ -297,3 +297,30 @@ Co-users were incorrectly landing on the patient kiosk after login. The portal n
 - Continue building co-user portal milestones M2–M7 in order
 - All nav cards on the dashboard link to routes that don't exist yet — each milestone fills them in
 - Test the role-routing end-to-end: co-user login → dashboard; patient login → kiosk home
+
+---
+
+## June 1, 2026 (continued)
+
+### Mobile App — Add & Import Screen Redesign
+
+The six "Add & Import" screens on the co-user side were redesigned to match the motion-study design handoff (`memoria-motion.html`, "Add & Import" group). All Supabase logic, navigation, and permissions handling were preserved; only the visual layer changed.
+
+A new shared primitives file `apps/mobile/src/screens/couser/FlowLayout.tsx` was created with reusable components used across all six screens: `FlowNav` (circular back + close icon buttons, replacing the old text-link "← Back / ✕" header), `FlowHeader` (title in `colors.fg` + subtitle in `#9a9ab0` muted purple, replacing the old large lavender title), `FocusField` (text input with a 2px purple border + soft shadow glow on focus, replacing plain flat inputs), `AddRow` (field + circular purple add button in a flex row), `FactChip` (card with lavender bullet dot + text + red close icon, replacing the old simple pill), `ObCheck` (circular checkbox, filled purple + white check icon when selected), `FlowButton` (shimmer primary action button via the existing `ShimmerButton`), `SectionCard` / `SectionTitle` (sunken `#22223a` card for inline form sections), `AddSubButton` (deep-purple secondary button for "Add this person" / "Add this event"), and `TypeSegment` (segmented control for event type).
+
+`AddLifeFactsScreen` was updated to use the new nav, header, `AddRow`, `FactChip` chips (with lavender bullet and animated leave), and a shimmer "Save N facts" / "Skip for now" button. `AddPeopleScreen` was updated so added people render as gradient `Avatar` circles (using the existing `Avatar` from `motion/ui`) plus a green `check` icon instead of the old left-bordered purple cards; the form card uses `SectionCard`; key facts use inline flex-wrap chips; the "Add this person" button includes the `addPerson` icon. `AddEventsScreen` was updated so added events keep the left-border style but with tightened dimensions; the form card uses `SectionCard`; the type selector uses `TypeSegment`; the "Add this event" button includes the `add` icon.
+
+`ImportContactsScreen` was restructured with a fixed header (FlowNav + FlowHeader + select-all/count toolbar) above the existing `FlatList`. Each row now shows a gradient `Avatar` circle, name, phone or italic "Already imported" in lavender, and a circular `ObCheck`. Selection is shown as a persistent `borderWidth: 2` that transitions from transparent to purple — no layout shift. The `ShimmerButton` import action is pinned at the bottom and appears when any contacts are selected. The standalone "Cancel" text link was removed (the back button handles cancellation). `ImportPhotosScreen` was similarly restructured: fixed header above the 3-column `FlatList` grid, 3px purple border + top-right `check` overlay circle on selected tiles, `ShimmerButton` at bottom. `ImportCalendarScreen` was restructured with a fixed header + toolbar; each event row now shows a 44×44 sunken day-abbreviation chip (MON/TUE/WED etc., lavender 12px bold) instead of a plain date, plus `ObCheck` and the same inset-border selection pattern, and `ShimmerButton` at bottom.
+
+All six screens were TypeScript-clean and the full test suite (140 tests) passed.
+
+### Mobile App — Monorepo Metro Fix
+
+The app was crashing on launch after the W1 monorepo conversion with `TypeError: Cannot read property 'useState' of null`. Root cause: the three workspaces pinned different React versions (`apps/mobile@19.1.0`, `apps/kiosk@19.2.4`, `packages/core@*`), so npm installed three separate React copies (`19.1.0`, `19.2.4`, `19.2.6`) — one per workspace. Metro bundled the mobile app's React for app files and the workspace-root React for `packages/core` files (resolved via the symlink's real path), producing two live React runtimes. The `AuthContext` hooks crossing the boundary triggered the dispatcher mismatch.
+
+Two fixes were applied. First, `packages/core/package.json` moved `react` from `dependencies` to `peerDependencies: ">=18"` so core no longer triggers a separate React install. Second, `apps/mobile/metro.config.js` replaced the `extraNodeModules` approach (which doesn't intercept symlinked workspace packages) with a `resolver.resolveRequest` hook that intercepts every Metro module lookup for `react`, `react/jsx-runtime`, `react/jsx-dev-runtime`, `react-native`, and `react-native-reanimated` and hard-routes them to `apps/mobile/node_modules`. This ensures a single React runtime regardless of where in the monorepo the importing file lives.
+
+### Next Steps
+- Verify the Metro fix resolves the startup crash on the iOS simulator end-to-end
+- Continue building co-user portal milestones M2–M7 in order
+- Test the mobile app's Add & Import screen redesign on device once the simulator is working

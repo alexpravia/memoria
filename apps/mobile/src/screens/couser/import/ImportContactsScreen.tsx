@@ -12,8 +12,11 @@ import {
 } from "react-native";
 import * as Contacts from "expo-contacts";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { supabase } from "@memoria/core";
-import { useAuth } from "@memoria/core";
+import { supabase, useAuth } from "@memoria/core";
+import { colors, radius } from "@memoria/core";
+import { SpringPressable } from "../../../motion/primitives";
+import { Avatar, ShimmerButton } from "../../../motion/ui";
+import { FlowNav, FlowHeader, ObCheck, MUTE } from "../FlowLayout";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -56,7 +59,6 @@ export default function ImportContactsScreen({ navigation }: Props) {
       ],
     });
 
-    // Fetch already-imported people to mark them
     const { data: existingPeople } = await supabase
       .from("people")
       .select("full_name")
@@ -77,7 +79,8 @@ export default function ImportContactsScreen({ navigation }: Props) {
         alreadyImported: existingNames.has((c.name || "").toLowerCase()),
       }))
       .sort((a, b) => {
-        if (a.alreadyImported !== b.alreadyImported) return a.alreadyImported ? 1 : -1;
+        if (a.alreadyImported !== b.alreadyImported)
+          return a.alreadyImported ? 1 : -1;
         return a.name.localeCompare(b.name);
       });
 
@@ -95,8 +98,8 @@ export default function ImportContactsScreen({ navigation }: Props) {
   }
 
   function toggleContact(id: string) {
-    setContacts(
-      contacts.map((c) =>
+    setContacts((arr) =>
+      arr.map((c) =>
         c.id === id && !c.alreadyImported ? { ...c, selected: !c.selected } : c
       )
     );
@@ -104,16 +107,16 @@ export default function ImportContactsScreen({ navigation }: Props) {
 
   function selectAll() {
     const selectable = contacts.filter((c) => !c.alreadyImported);
-    const allSelected = selectable.length > 0 && selectable.every((c) => c.selected);
-    setContacts(contacts.map((c) => c.alreadyImported ? c : { ...c, selected: !allSelected }));
+    const allSelected =
+      selectable.length > 0 && selectable.every((c) => c.selected);
+    setContacts((arr) =>
+      arr.map((c) => (c.alreadyImported ? c : { ...c, selected: !allSelected }))
+    );
   }
 
   async function handleImport() {
     const selected = contacts.filter((c) => c.selected);
-    if (selected.length === 0) {
-      Alert.alert("Please select at least one contact to import");
-      return;
-    }
+    if (selected.length === 0) return;
 
     setImporting(true);
     try {
@@ -133,25 +136,26 @@ export default function ImportContactsScreen({ navigation }: Props) {
 
       Alert.alert(
         "Imported!",
-        `${selected.length} contact${selected.length > 1 ? "s" : ""} imported. You can edit relationship, key facts, emotional notes, phone, and email from People.`,
+        `${selected.length} contact${selected.length > 1 ? "s" : ""} imported. You can edit their details from People.`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       );
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
     } finally {
       setImporting(false);
     }
   }
 
   const selectedCount = contacts.filter((c) => c.selected).length;
-
-  const availableCount = contacts.filter((c) => !c.alreadyImported).length;
+  const selectable = contacts.filter((c) => !c.alreadyImported);
+  const allSelected =
+    selectable.length > 0 && selectable.every((c) => c.selected);
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
-        <Text style={styles.loadingText}>Loading contacts...</Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading contacts…</Text>
       </View>
     );
   }
@@ -159,15 +163,16 @@ export default function ImportContactsScreen({ navigation }: Props) {
   if (permissionDenied) {
     return (
       <View style={styles.centered}>
-        <Text style={styles.permissionTitle}>Contact Access Needed</Text>
-        <Text style={styles.permissionText}>
-          We need access to your contacts to import them. Please grant access in Settings.
+        <Text style={styles.permTitle}>Contact Access Needed</Text>
+        <Text style={styles.permText}>
+          We need access to your contacts to import them. Please grant access in
+          Settings.
         </Text>
-        <TouchableOpacity style={styles.settingsButton} onPress={openSettings}>
-          <Text style={styles.settingsButtonText}>Open Settings</Text>
+        <TouchableOpacity style={styles.settingsBtn} onPress={openSettings}>
+          <Text style={styles.settingsBtnText}>Open Settings</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={styles.cancelButton} onPress={() => navigation.goBack()}>
-          <Text style={styles.cancelText}>Cancel</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.skipBtn}>
+          <Text style={styles.skipText}>Go back</Text>
         </TouchableOpacity>
       </View>
     );
@@ -175,86 +180,75 @@ export default function ImportContactsScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
+      {/* Fixed header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Import Contacts</Text>
-        <Text style={styles.subtitle}>
-          {availableCount === 0
-            ? "All visible contacts have been imported. Grant access to more contacts in Settings."
-            : "Select the people important to your loved one"}
-        </Text>
+        <FlowNav
+          onBack={() => navigation.goBack()}
+          onClose={() => navigation.goBack()}
+        />
+        <FlowHeader
+          title="Import Contacts"
+          sub="Pick the people who matter to them"
+        />
 
-        <View style={styles.headerActions}>
+        {/* Toolbar */}
+        <View style={styles.toolbar}>
           <TouchableOpacity onPress={selectAll}>
             <Text style={styles.selectAllText}>
-              {contacts.every((c) => c.selected) ? "Deselect All" : "Select All"}
+              {allSelected ? "Deselect all" : "Select all"}
             </Text>
           </TouchableOpacity>
           <Text style={styles.countText}>{selectedCount} selected</Text>
         </View>
-
-        <TouchableOpacity style={styles.grantMoreButton} onPress={openSettings}>
-          <Text style={styles.grantMoreText}>Grant Access to More Contacts</Text>
-        </TouchableOpacity>
       </View>
 
+      {/* List */}
       <FlatList
         data={contacts}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[
-              styles.contactItem,
-              item.selected && styles.contactItemSelected,
-              item.alreadyImported && styles.contactItemImported,
-            ]}
+        renderItem={({ item, index }) => (
+          <SpringPressable
             onPress={() => toggleContact(item.id)}
             disabled={item.alreadyImported}
+            style={[
+              styles.contactRow,
+              item.selected && styles.contactRowSelected,
+              item.alreadyImported && styles.contactRowImported,
+            ]}
           >
+            <Avatar initial={item.name[0]} seed={item.name} size={40} />
             <View style={styles.contactInfo}>
-              <Text style={[styles.contactName, item.alreadyImported && styles.importedText]}>{item.name}</Text>
+              <Text
+                style={[
+                  styles.contactName,
+                  item.alreadyImported && styles.dimText,
+                ]}
+              >
+                {item.name}
+              </Text>
               {item.alreadyImported ? (
                 <Text style={styles.importedBadge}>Already imported</Text>
               ) : item.phone ? (
-                <Text style={styles.contactDetail}>{item.phone}</Text>
+                <Text style={styles.contactPhone}>{item.phone}</Text>
               ) : null}
             </View>
-            {!item.alreadyImported && (
-              <View
-                style={[
-                  styles.checkbox,
-                  item.selected && styles.checkboxChecked,
-                ]}
-              >
-                {item.selected && <Text style={styles.checkmark}>✓</Text>}
-              </View>
-            )}
-          </TouchableOpacity>
+            {!item.alreadyImported && <ObCheck on={!!item.selected} />}
+          </SpringPressable>
         )}
       />
 
+      {/* Fixed import button */}
       {selectedCount > 0 && (
-        <TouchableOpacity
-          style={styles.importButton}
-          onPress={handleImport}
-          disabled={importing}
-        >
-          {importing ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.importButtonText}>
-              Import {selectedCount} Contact{selectedCount > 1 ? "s" : ""}
-            </Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.importWrap}>
+          <ShimmerButton
+            label={`Import ${selectedCount} contact${selectedCount > 1 ? "s" : ""}`}
+            onPress={handleImport}
+            disabled={importing}
+            hero
+          />
+        </View>
       )}
-
-      <TouchableOpacity
-        style={styles.cancelButton}
-        onPress={() => navigation.goBack()}
-      >
-        <Text style={styles.cancelText}>Cancel</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -262,166 +256,123 @@ export default function ImportContactsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
+    padding: 32,
   },
   loadingText: {
-    color: "#e0e0e0",
+    color: colors.fg,
     fontSize: 16,
     marginTop: 12,
   },
-  header: {
-    padding: 40,
-    paddingTop: 80,
-    paddingBottom: 16,
+  permTitle: {
+    fontSize: 24,
+    fontWeight: "700",
+    color: colors.primarySoft,
+    marginBottom: 12,
+    textAlign: "center",
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
-  },
-  subtitle: {
+  permText: {
     fontSize: 16,
-    color: "#e0e0e0",
-    marginBottom: 16,
+    color: colors.fg,
+    textAlign: "center",
+    marginBottom: 24,
+    lineHeight: 24,
   },
-  headerActions: {
+  settingsBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 16,
+    paddingHorizontal: 32,
+    borderRadius: radius.sm,
+    marginBottom: 12,
+  },
+  settingsBtnText: {
+    fontSize: 18,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  skipBtn: {
+    paddingVertical: 12,
+  },
+  skipText: {
+    fontSize: 16,
+    color: MUTE,
+  },
+  header: {
+    paddingHorizontal: 20,
+    paddingTop: 72,
+    paddingBottom: 12,
+  },
+  toolbar: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    marginBottom: 4,
   },
   selectAllText: {
-    color: "#7c4dff",
-    fontSize: 16,
+    color: colors.primary,
+    fontSize: 15,
     fontWeight: "600",
   },
   countText: {
-    color: "#888",
+    color: MUTE,
     fontSize: 14,
   },
   list: {
-    paddingHorizontal: 40,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+    gap: 8,
   },
-  contactItem: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
+  contactRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-  },
-  contactItemSelected: {
+    gap: 13,
     borderWidth: 2,
-    borderColor: "#7c4dff",
+    borderColor: "transparent",
+  },
+  contactRowSelected: {
+    borderColor: colors.primary,
+  },
+  contactRowImported: {
+    opacity: 0.5,
   },
   contactInfo: {
     flex: 1,
   },
   contactName: {
-    fontSize: 17,
+    fontSize: 16.5,
     fontWeight: "600",
-    color: "#fff",
+    color: colors.fgStrong,
   },
-  contactDetail: {
-    fontSize: 14,
-    color: "#888",
-    marginTop: 4,
-  },
-  checkbox: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "#555",
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 12,
-  },
-  checkboxChecked: {
-    backgroundColor: "#7c4dff",
-    borderColor: "#7c4dff",
-  },
-  checkmark: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  importButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginHorizontal: 40,
-    marginTop: 12,
-  },
-  importButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  cancelButton: {
-    alignItems: "center",
-    paddingVertical: 14,
-    marginBottom: 20,
-  },
-  cancelText: {
-    fontSize: 16,
-    color: "#888",
-  },
-  contactItemImported: {
-    opacity: 0.5,
-  },
-  importedText: {
-    color: "#888",
+  contactPhone: {
+    fontSize: 13,
+    color: MUTE,
+    marginTop: 3,
   },
   importedBadge: {
-    fontSize: 12,
-    color: "#7c4dff",
-    marginTop: 4,
+    fontSize: 13,
+    color: colors.primary,
+    marginTop: 3,
     fontStyle: "italic",
   },
-  permissionTitle: {
-    fontSize: 24,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 12,
-    textAlign: "center",
+  dimText: {
+    color: MUTE,
   },
-  permissionText: {
-    fontSize: 16,
-    color: "#e0e0e0",
-    textAlign: "center",
-    marginBottom: 24,
-    lineHeight: 24,
+  importWrap: {
     paddingHorizontal: 20,
-  },
-  settingsButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 16,
-    paddingHorizontal: 32,
-    borderRadius: 12,
-    marginBottom: 12,
-  },
-  settingsButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  grantMoreButton: {
-    marginTop: 12,
-    paddingVertical: 10,
-    alignItems: "center",
-  },
-  grantMoreText: {
-    fontSize: 14,
-    color: "#7c4dff",
-    fontWeight: "600",
+    paddingBottom: 32,
+    paddingTop: 12,
+    backgroundColor: colors.bg,
   },
 });

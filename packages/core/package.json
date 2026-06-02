@@ -10,8 +10,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.0.0",
-    "react": "*"
+    "@supabase/supabase-js": "^2.0.0"
+  },
+  "peerDependencies": {
+    "react": ">=18"
   },
   "devDependencies": {
     "typescript": "^5.0.0",

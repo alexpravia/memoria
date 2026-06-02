@@ -1,28 +1,37 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ScrollView,
-} from "react-native";
+import { View, Text, ScrollView, StyleSheet, Alert } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
-import { supabase } from "@memoria/core";
-import { embedAndStore } from "@memoria/core";
+import { supabase, embedAndStore } from "@memoria/core";
+import { colors, radius } from "@memoria/core";
+import { AnimatedEntrance } from "../../../motion/primitives";
+import {
+  FlowNav, FlowHeader, FocusField, FlowButton,
+  SectionCard, SectionTitle, AddSubButton, TypeSegment, MUTE,
+} from "../FlowLayout";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
   route: RouteProp<any>;
 };
 
+type EventType = "one_time" | "recurring" | "routine";
+
 interface EventEntry {
   title: string;
   description: string;
   event_date: string;
-  event_type: "one_time" | "recurring" | "routine";
+  event_type: EventType;
+}
+
+const TYPE_OPTIONS: { label: string; value: EventType }[] = [
+  { label: "One time", value: "one_time" },
+  { label: "Recurring", value: "recurring" },
+  { label: "Routine", value: "routine" },
+];
+
+function typeLabel(t: EventType) {
+  return TYPE_OPTIONS.find((o) => o.value === t)?.label ?? t;
 }
 
 export default function AddEventsScreen({ navigation, route }: Props) {
@@ -31,17 +40,17 @@ export default function AddEventsScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
 
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
   const [eventDate, setEventDate] = useState("");
-  const [eventType, setEventType] = useState<"one_time" | "recurring" | "routine">("one_time");
+  const [description, setDescription] = useState("");
+  const [eventType, setEventType] = useState<EventType>("one_time");
 
   function addEvent() {
     if (!title.trim() || !eventDate.trim()) {
       Alert.alert("Please enter at least a title and date");
       return;
     }
-    setEvents([
-      ...events,
+    setEvents((e) => [
+      ...e,
       {
         title: title.trim(),
         description: description.trim(),
@@ -50,8 +59,8 @@ export default function AddEventsScreen({ navigation, route }: Props) {
       },
     ]);
     setTitle("");
-    setDescription("");
     setEventDate("");
+    setDescription("");
     setEventType("one_time");
   }
 
@@ -73,122 +82,99 @@ export default function AddEventsScreen({ navigation, route }: Props) {
           .select("id, title, description");
         if (error) throw error;
 
-        // Fire-and-forget: embed each new event. Failures must NOT block the user.
-        (inserted || []).forEach((row: { id: string; title: string; description: string | null }) => {
-          const text = `${row.title} ${row.description ?? ""}`.trim();
-          void embedAndStore("events", row.id, text);
-        });
+        (inserted || []).forEach(
+          (row: { id: string; title: string; description: string | null }) => {
+            const text = `${row.title} ${row.description ?? ""}`.trim();
+            void embedAndStore("events", row.id, text);
+          }
+        );
       }
 
       navigation.navigate("CoUserHome");
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
     } finally {
       setLoading(false);
     }
   }
 
-  const typeOptions: { label: string; value: "one_time" | "recurring" | "routine" }[] = [
-    { label: "One Time", value: "one_time" },
-    { label: "Recurring", value: "recurring" },
-    { label: "Routine", value: "routine" },
-  ];
-
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate("CoUserHome")}>
-          <Text style={styles.exitText}>✕</Text>
-        </TouchableOpacity>
-      </View>
-      <Text style={styles.title}>Events & Schedule</Text>
-      <Text style={styles.subtitle}>
-        Add appointments, routines, and upcoming events
-      </Text>
-
-      {/* Events already added */}
-      {events.map((e, index) => (
-        <View key={index} style={styles.eventCard}>
-          <Text style={styles.eventTitle}>{e.title}</Text>
-          <Text style={styles.eventDate}>{e.event_date}</Text>
-          <Text style={styles.eventType}>{e.event_type.replace("_", " ")}</Text>
-        </View>
-      ))}
-
-      {/* Add event form */}
-      <View style={styles.formSection}>
-        <Text style={styles.formTitle}>
-          {events.length === 0 ? "Add an event" : "Add another event"}
-        </Text>
-
-        <Text style={styles.label}>Title *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="e.g., Doctor's appointment"
-          placeholderTextColor="#888"
-          value={title}
-          onChangeText={setTitle}
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      <FlowNav
+        onBack={() => navigation.goBack()}
+        onClose={() => navigation.navigate("CoUserHome")}
+      />
+      <AnimatedEntrance index={0}>
+        <FlowHeader
+          title="Events & Schedule"
+          sub="Appointments, routines, and visits to come"
         />
+      </AnimatedEntrance>
 
-        <Text style={styles.label}>Date *</Text>
-        <TextInput
-          style={styles.input}
-          placeholder="YYYY-MM-DD"
-          placeholderTextColor="#888"
-          value={eventDate}
-          onChangeText={setEventDate}
-        />
-
-        <Text style={styles.label}>Description</Text>
-        <TextInput
-          style={[styles.input, { height: 70, textAlignVertical: "top" }]}
-          placeholder="Any details about the event"
-          placeholderTextColor="#888"
-          value={description}
-          onChangeText={setDescription}
-          multiline
-        />
-
-        <Text style={styles.label}>Type</Text>
-        <View style={styles.typeRow}>
-          {typeOptions.map((opt) => (
-            <TouchableOpacity
-              key={opt.value}
-              style={[
-                styles.typeButton,
-                eventType === opt.value && styles.typeButtonActive,
-              ]}
-              onPress={() => setEventType(opt.value)}
-            >
-              <Text
-                style={[
-                  styles.typeButtonText,
-                  eventType === opt.value && styles.typeButtonTextActive,
-                ]}
-              >
-                {opt.label}
-              </Text>
-            </TouchableOpacity>
+      {/* Added events list */}
+      {events.length > 0 && (
+        <View style={styles.eventList}>
+          {events.map((e, i) => (
+            <AnimatedEntrance key={e.title + i} index={i + 1}>
+              <View style={styles.eventCard}>
+                <Text style={styles.eventTitle}>{e.title}</Text>
+                <Text style={styles.eventDate}>{e.event_date}</Text>
+                <Text style={styles.eventType}>{typeLabel(e.event_type)}</Text>
+              </View>
+            </AnimatedEntrance>
           ))}
         </View>
+      )}
 
-        <TouchableOpacity style={styles.addEventButton} onPress={addEvent}>
-          <Text style={styles.addEventButtonText}>+ Add This Event</Text>
-        </TouchableOpacity>
-      </View>
+      {/* Add-event form card */}
+      <AnimatedEntrance index={events.length + 2}>
+        <SectionCard>
+          <SectionTitle>
+            {events.length === 0 ? "Add an event" : "Add another event"}
+          </SectionTitle>
 
-      <TouchableOpacity
-        style={styles.finishButton}
-        onPress={handleFinish}
-        disabled={loading}
-      >
-        <Text style={styles.finishButtonText}>
-          {events.length === 0 ? "Skip & Finish" : "Finish Setup"}
-        </Text>
-      </TouchableOpacity>
+          <FocusField
+            label="Title"
+            value={title}
+            onChange={setTitle}
+            placeholder="e.g. Garden club"
+          />
+          <FocusField
+            label="Date"
+            value={eventDate}
+            onChange={setEventDate}
+            placeholder="e.g. Sat, Jun 6 · 10:00 AM"
+          />
+          <FocusField
+            label="Description"
+            value={description}
+            onChange={setDescription}
+            placeholder="Any details about the event"
+            multiline
+          />
+
+          <Text style={styles.typeLabel}>Type</Text>
+          <TypeSegment
+            value={eventType}
+            options={TYPE_OPTIONS}
+            onChange={setEventType}
+          />
+
+          <AddSubButton label="Add this event" icon="add" onPress={addEvent} />
+        </SectionCard>
+      </AnimatedEntrance>
+
+      <AnimatedEntrance index={events.length + 4}>
+        <FlowButton
+          label={events.length === 0 ? "Skip & finish" : "Finish setup"}
+          onPress={handleFinish}
+          disabled={loading}
+        />
+      </AnimatedEntrance>
     </ScrollView>
   );
 }
@@ -196,135 +182,47 @@ export default function AddEventsScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   content: {
-    padding: 40,
-    paddingTop: 80,
-    paddingBottom: 60,
+    padding: 20,
+    paddingTop: 72,
+    paddingBottom: 48,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: "#e0e0e0",
-    marginBottom: 24,
+  eventList: {
+    marginTop: 18,
+    gap: 10,
   },
   eventCard: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 10,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     borderLeftWidth: 4,
-    borderLeftColor: "#7c4dff",
+    borderLeftColor: colors.primary,
   },
   eventTitle: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#fff",
+    fontSize: 17,
+    fontWeight: "600",
+    color: colors.fg,
   },
   eventDate: {
-    fontSize: 14,
-    color: "#b388ff",
+    fontSize: 13.5,
+    color: colors.primarySoft,
     marginTop: 4,
   },
   eventType: {
-    fontSize: 13,
-    color: "#888",
-    marginTop: 2,
+    fontSize: 12.5,
+    color: MUTE,
+    marginTop: 3,
     textTransform: "capitalize",
   },
-  formSection: {
-    backgroundColor: "#22223a",
-    borderRadius: 16,
-    padding: 20,
-    marginTop: 16,
-  },
-  formTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#e0e0e0",
-    marginBottom: 16,
-  },
-  label: {
-    fontSize: 14,
-    color: "#b388ff",
-    marginBottom: 6,
-    fontWeight: "600",
-  },
-  input: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 10,
-    padding: 14,
-    fontSize: 16,
-    color: "#fff",
-    marginBottom: 14,
-  },
-  typeRow: {
-    flexDirection: "row",
-    marginBottom: 16,
-    gap: 8,
-  },
-  typeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    borderRadius: 8,
-    backgroundColor: "#2a2a4a",
-    alignItems: "center",
-  },
-  typeButtonActive: {
-    backgroundColor: "#7c4dff",
-  },
-  typeButtonText: {
-    color: "#888",
-    fontSize: 13,
-    fontWeight: "600",
-  },
-  typeButtonTextActive: {
-    color: "#fff",
-  },
-  addEventButton: {
-    backgroundColor: "#5e35b1",
-    paddingVertical: 14,
-    borderRadius: 10,
-    alignItems: "center",
-    marginTop: 8,
-  },
-  addEventButtonText: {
-    fontSize: 16,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  finishButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 24,
-  },
-  finishButtonText: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  backText: {
-    color: "#b388ff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  exitText: {
-    color: "#ff6b6b",
-    fontSize: 20,
-    fontWeight: "bold",
+  typeLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
+    textTransform: "uppercase",
+    color: colors.primarySoft,
+    marginBottom: 7,
   },
 });

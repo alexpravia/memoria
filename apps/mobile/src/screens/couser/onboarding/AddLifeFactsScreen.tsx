@@ -1,18 +1,13 @@
 import React, { useState } from "react";
-import {
-  View,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  StyleSheet,
-  Alert,
-  ScrollView,
-  FlatList,
-} from "react-native";
+import { View, ScrollView, StyleSheet, Alert } from "react-native";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
 import { RouteProp } from "@react-navigation/native";
-import { supabase } from "@memoria/core";
-import { embedAndStore } from "@memoria/core";
+import { supabase, embedAndStore } from "@memoria/core";
+import { colors } from "@memoria/core";
+import { AnimatedEntrance } from "../../../motion/primitives";
+import {
+  FlowNav, FlowHeader, AddRow, FactChip, FlowButton,
+} from "../FlowLayout";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -21,18 +16,19 @@ type Props = {
 
 export default function AddLifeFactsScreen({ navigation, route }: Props) {
   const userId = route.params?.userId;
-  const [fact, setFact] = useState("");
+  const [draft, setDraft] = useState("");
   const [facts, setFacts] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
 
   function addFact() {
-    if (!fact.trim()) return;
-    setFacts([...facts, fact.trim()]);
-    setFact("");
+    const v = draft.trim();
+    if (!v) return;
+    setFacts((f) => [...f, v]);
+    setDraft("");
   }
 
   function removeFact(index: number) {
-    setFacts(facts.filter((_, i) => i !== index));
+    setFacts((f) => f.filter((_, i) => i !== index));
   }
 
   async function handleNext() {
@@ -55,66 +51,65 @@ export default function AddLifeFactsScreen({ navigation, route }: Props) {
         .select("id, fact");
       if (error) throw error;
 
-      // Fire-and-forget: embed each new fact. Failures must NOT block the user.
       (inserted || []).forEach((row: { id: string; fact: string }) => {
         void embedAndStore("life_facts", row.id, row.fact);
       });
 
       navigation.navigate("AddPeople", { userId });
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={styles.backText}>← Back</Text>
-        </TouchableOpacity>
-        <TouchableOpacity onPress={() => navigation.navigate("CoUserHome")}>
-          <Text style={styles.exitText}>✕</Text>
-        </TouchableOpacity>
-      </View>
-      <Text style={styles.title}>Life Facts</Text>
-      <Text style={styles.subtitle}>
-        Add important things about their life that they should be reminded of
-      </Text>
-
-      <View style={styles.inputRow}>
-        <TextInput
-          style={styles.input}
-          placeholder='e.g., "You retired from teaching in 2015"'
-          placeholderTextColor="#888"
-          value={fact}
-          onChangeText={setFact}
-          onSubmitEditing={addFact}
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+    >
+      <FlowNav
+        onBack={() => navigation.goBack()}
+        onClose={() => navigation.navigate("CoUserHome")}
+      />
+      <AnimatedEntrance index={0}>
+        <FlowHeader
+          title="Life Facts"
+          sub="Things they should be gently reminded of"
         />
-        <TouchableOpacity style={styles.addButton} onPress={addFact}>
-          <Text style={styles.addButtonText}>+</Text>
-        </TouchableOpacity>
-      </View>
+      </AnimatedEntrance>
 
-      {facts.map((f, index) => (
-        <View key={index} style={styles.factItem}>
-          <Text style={styles.factText}>{f}</Text>
-          <TouchableOpacity onPress={() => removeFact(index)}>
-            <Text style={styles.removeText}>✕</Text>
-          </TouchableOpacity>
+      <View style={styles.body}>
+        <AnimatedEntrance index={1}>
+          <AddRow
+            value={draft}
+            onChange={setDraft}
+            onAdd={addFact}
+            placeholder='e.g. "You retired from teaching in 2015"'
+          />
+        </AnimatedEntrance>
+
+        <View>
+          {facts.map((f, i) => (
+            <AnimatedEntrance key={f + i} index={i + 2}>
+              <FactChip text={f} onRemove={() => removeFact(i)} />
+            </AnimatedEntrance>
+          ))}
         </View>
-      ))}
 
-      <TouchableOpacity
-        style={styles.button}
-        onPress={handleNext}
-        disabled={loading}
-      >
-        <Text style={styles.buttonText}>
-          {facts.length === 0 ? "Skip" : "Next"}
-        </Text>
-      </TouchableOpacity>
+        <AnimatedEntrance index={facts.length + 3}>
+          <FlowButton
+            label={
+              facts.length === 0
+                ? "Skip for now"
+                : `Save ${facts.length} fact${facts.length > 1 ? "s" : ""}`
+            }
+            onPress={handleNext}
+            disabled={loading}
+          />
+        </AnimatedEntrance>
+      </View>
     </ScrollView>
   );
 }
@@ -122,94 +117,14 @@ export default function AddLifeFactsScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   content: {
-    padding: 40,
-    paddingTop: 80,
+    padding: 20,
+    paddingTop: 72,
+    paddingBottom: 48,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 18,
-    color: "#e0e0e0",
-    marginBottom: 32,
-  },
-  inputRow: {
-    flexDirection: "row",
-    marginBottom: 20,
-  },
-  input: {
-    flex: 1,
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
-    color: "#fff",
-    marginRight: 10,
-  },
-  addButton: {
-    backgroundColor: "#7c4dff",
-    width: 52,
-    borderRadius: 12,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  addButtonText: {
-    fontSize: 28,
-    color: "#fff",
-    fontWeight: "bold",
-  },
-  factItem: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 10,
-    padding: 14,
-    marginBottom: 10,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  factText: {
-    color: "#e0e0e0",
-    fontSize: 16,
-    flex: 1,
-    marginRight: 10,
-  },
-  removeText: {
-    color: "#ff6b6b",
-    fontSize: 18,
-    fontWeight: "bold",
-  },
-  button: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginTop: 20,
-  },
-  buttonText: {
-    fontSize: 20,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  headerRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  backText: {
-    color: "#b388ff",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  exitText: {
-    color: "#ff6b6b",
-    fontSize: 20,
-    fontWeight: "bold",
+  body: {
+    marginTop: 22,
   },
 });

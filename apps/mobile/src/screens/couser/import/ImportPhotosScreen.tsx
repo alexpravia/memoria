@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   Alert,
   FlatList,
@@ -13,9 +12,12 @@ import {
 import * as MediaLibrary from "expo-media-library";
 import * as ImageManipulator from "expo-image-manipulator";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { supabase } from "@memoria/core";
-import { processPhotos } from "@memoria/core";
-import { useAuth } from "@memoria/core";
+import { supabase, processPhotos, useAuth } from "@memoria/core";
+import { colors, radius } from "@memoria/core";
+import { SpringPressable } from "../../../motion/primitives";
+import { ShimmerButton } from "../../../motion/ui";
+import Icon from "../../../components/Icon";
+import { FlowNav, FlowHeader, MUTE } from "../FlowLayout";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -29,7 +31,9 @@ interface PhotoItem {
 }
 
 const SCREEN_WIDTH = Dimensions.get("window").width;
-const PHOTO_SIZE = (SCREEN_WIDTH - 80 - 16) / 3; // 3 columns with gaps
+const COL_GAP = 8;
+const SIDE_PAD = 20;
+const PHOTO_SIZE = (SCREEN_WIDTH - SIDE_PAD * 2 - COL_GAP * 2) / 3;
 
 export default function ImportPhotosScreen({ navigation }: Props) {
   const { userId } = useAuth();
@@ -54,7 +58,6 @@ export default function ImportPhotosScreen({ navigation }: Props) {
       setLoading(false);
       return;
     }
-
     await fetchPage();
     setLoading(false);
   }
@@ -85,17 +88,14 @@ export default function ImportPhotosScreen({ navigation }: Props) {
   }
 
   function togglePhoto(id: string) {
-    setPhotos(
-      photos.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p))
+    setPhotos((arr) =>
+      arr.map((p) => (p.id === id ? { ...p, selected: !p.selected } : p))
     );
   }
 
   async function handleImport() {
     const selected = photos.filter((p) => p.selected);
-    if (selected.length === 0) {
-      Alert.alert("Please select at least one photo to import");
-      return;
-    }
+    if (selected.length === 0) return;
 
     setImporting(true);
     let failedUploads = 0;
@@ -112,43 +112,29 @@ export default function ImportPhotosScreen({ navigation }: Props) {
         const p = selected[i];
         const isHeic = /\.heic($|\?)/i.test(p.uri);
         setUploadProgress(
-          `Uploading ${i + 1} of ${selected.length}...${
-            isHeic ? " (converting from HEIC)" : ""
-          }`
+          `Uploading ${i + 1} of ${selected.length}…${isHeic ? " (converting)" : ""}`
         );
 
-        // Convert to JPEG (handles HEIC and normalizes everything else).
         let uploadUri = p.uri;
         try {
-          const manipulated = await ImageManipulator.manipulateAsync(
-            p.uri,
-            [],
-            {
-              compress: 0.85,
-              format: ImageManipulator.SaveFormat.JPEG,
-            }
-          );
+          const manipulated = await ImageManipulator.manipulateAsync(p.uri, [], {
+            compress: 0.85,
+            format: ImageManipulator.SaveFormat.JPEG,
+          });
           uploadUri = manipulated.uri;
-        } catch (convErr: any) {
-          console.warn(
-            `Image conversion failed for ${p.uri}: ${convErr.message}`
-          );
+        } catch {
           failedUploads += 1;
           continue;
         }
 
-        // Read local file as blob and upload to Supabase Storage.
-        const filename = `${Date.now()}-${Math.random()
-          .toString(36)
-          .substr(2, 9)}.jpg`;
+        const filename = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}.jpg`;
         const storagePath = `${userId}/${filename}`;
 
         let blob: Blob;
         try {
           const response = await fetch(uploadUri);
           blob = await response.blob();
-        } catch (readErr: any) {
-          console.warn(`Read failed for ${uploadUri}: ${readErr.message}`);
+        } catch {
           failedUploads += 1;
           continue;
         }
@@ -157,7 +143,6 @@ export default function ImportPhotosScreen({ navigation }: Props) {
           .from("photos")
           .upload(storagePath, blob, { contentType: "image/jpeg" });
         if (uploadError) {
-          console.warn(`Upload failed for ${storagePath}: ${uploadError.message}`);
           failedUploads += 1;
           continue;
         }
@@ -166,11 +151,7 @@ export default function ImportPhotosScreen({ navigation }: Props) {
           .from("photos")
           .getPublicUrl(storagePath);
 
-        // Defensive: refuse to insert anything that isn't an http(s) URL.
         if (!urlData?.publicUrl || !urlData.publicUrl.startsWith("http")) {
-          console.warn(
-            `Public URL missing/invalid for ${storagePath}: ${urlData?.publicUrl}`
-          );
           failedUploads += 1;
           continue;
         }
@@ -184,63 +165,51 @@ export default function ImportPhotosScreen({ navigation }: Props) {
         });
       }
 
-      // If everything failed, surface and bail before touching the DB.
       if (rows.length === 0) {
         Alert.alert(
           "Upload Failed",
-          `${failedUploads} of ${selected.length} photo${
-            selected.length > 1 ? "s" : ""
-          } failed to upload — check your connection and try again.`
+          `${failedUploads} of ${selected.length} photo${selected.length > 1 ? "s" : ""} failed to upload — check your connection and try again.`
         );
         return;
       }
 
-      // Insert successful uploads into media table.
       const { data: inserted, error } = await supabase
         .from("media")
         .insert(rows)
         .select("id, file_url");
       if (error) throw error;
 
-      // Analyze photos with AI vision (non-blocking on failures)
       let processingFailed = false;
       if (inserted && inserted.length > 0) {
-        setUploadProgress("Analyzing photos...");
+        setUploadProgress("Analyzing photos…");
         try {
           await processPhotos(
             inserted.map((row) => ({ mediaId: row.id, photoUrl: row.file_url })),
             userId!,
             (current, total) => {
-              setUploadProgress(`Analyzing photo ${current} of ${total}...`);
+              setUploadProgress(`Analyzing photo ${current} of ${total}…`);
             }
           );
-        } catch (err: any) {
-          console.warn("Photo processing error:", err.message);
+        } catch {
           processingFailed = true;
         }
       }
 
       const successCount = rows.length;
       const hasFailures = failedUploads > 0;
-      const title = hasFailures
-        ? "Imported With Warnings"
-        : processingFailed
-          ? "Imported With Warnings"
-          : "Imported!";
+      const title = hasFailures || processingFailed ? "Imported With Warnings" : "Imported!";
       const failureMsg = hasFailures
-        ? ` ${failedUploads} of ${selected.length} photo${
-            selected.length > 1 ? "s" : ""
-          } failed to upload — check your connection and try again.`
+        ? ` ${failedUploads} photo${failedUploads > 1 ? "s" : ""} failed to upload.`
         : "";
       const baseMsg = processingFailed
-        ? `${successCount} photo${successCount > 1 ? "s" : ""} imported, but some AI processing steps failed. Open Photos → Retry AI Processing or Review Queue.`
+        ? `${successCount} photo${successCount > 1 ? "s" : ""} imported, but some AI processing steps failed. Open Photos → Retry AI Processing.`
         : `${successCount} photo${successCount > 1 ? "s" : ""} imported and queued for review.`;
 
       Alert.alert(title, `${baseMsg}${failureMsg}`, [
         { text: "OK", onPress: () => navigation.goBack() },
       ]);
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
     } finally {
       setImporting(false);
       setUploadProgress("");
@@ -252,79 +221,73 @@ export default function ImportPhotosScreen({ navigation }: Props) {
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
-        <Text style={styles.loadingText}>Loading photos...</Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading photos…</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      {/* Fixed header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Import Photos</Text>
-        <Text style={styles.subtitle}>
-          Select photos to add to your loved one's memories
-        </Text>
+        <FlowNav
+          onBack={() => navigation.goBack()}
+          onClose={() => navigation.goBack()}
+        />
+        <FlowHeader
+          title="Import Photos"
+          sub="Add photos to their memories"
+        />
         <Text style={styles.countText}>{selectedCount} selected</Text>
       </View>
 
+      {/* Photo grid */}
       <FlatList
         data={photos}
         keyExtractor={(item) => item.id}
         numColumns={3}
-        contentContainerStyle={styles.grid}
         columnWrapperStyle={styles.row}
-        onEndReached={() => {
-          if (hasMore) fetchPage();
-        }}
+        contentContainerStyle={styles.grid}
+        onEndReached={() => { if (hasMore) fetchPage(); }}
         onEndReachedThreshold={0.5}
         renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[
-              styles.photoWrapper,
-              item.selected && styles.photoSelected,
-            ]}
+          <SpringPressable
             onPress={() => togglePhoto(item.id)}
+            style={[
+              styles.tileWrap,
+              item.selected && styles.tileSelected,
+            ]}
           >
-            <Image source={{ uri: item.uri }} style={styles.photo} />
+            <Image source={{ uri: item.uri }} style={styles.tileImage} />
             {item.selected && (
               <View style={styles.checkOverlay}>
-                <Text style={styles.checkmark}>✓</Text>
+                <Icon name="check" size={14} color="#fff" accentColor="#fff" />
               </View>
             )}
-          </TouchableOpacity>
+          </SpringPressable>
         )}
       />
 
+      {/* Fixed import button */}
       {selectedCount > 0 && (
-        <TouchableOpacity
-          style={styles.importButton}
-          onPress={handleImport}
-          disabled={importing}
-        >
+        <View style={styles.importWrap}>
           {importing ? (
-            <View style={{ alignItems: "center" }}>
-              <ActivityIndicator color="#fff" />
+            <View style={styles.progressWrap}>
+              <ActivityIndicator color={colors.primary} />
               {uploadProgress ? (
-                <Text style={{ color: "#fff", fontSize: 14, marginTop: 6 }}>
-                  {uploadProgress}
-                </Text>
+                <Text style={styles.progressText}>{uploadProgress}</Text>
               ) : null}
             </View>
           ) : (
-            <Text style={styles.importButtonText}>
-              Import {selectedCount} Photo{selectedCount > 1 ? "s" : ""}
-            </Text>
+            <ShimmerButton
+              label={`Import ${selectedCount} photo${selectedCount > 1 ? "s" : ""}`}
+              onPress={handleImport}
+              hero
+            />
           )}
-        </TouchableOpacity>
+        </View>
       )}
-
-      <TouchableOpacity
-        style={styles.cancelButton}
-        onPress={() => navigation.goBack()}
-      >
-        <Text style={styles.cancelText}>Cancel</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -332,96 +295,82 @@ export default function ImportPhotosScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
   },
   loadingText: {
-    color: "#e0e0e0",
+    color: colors.fg,
     fontSize: 16,
     marginTop: 12,
   },
   header: {
-    padding: 40,
-    paddingTop: 80,
-    paddingBottom: 16,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#e0e0e0",
-    marginBottom: 8,
+    paddingHorizontal: SIDE_PAD,
+    paddingTop: 72,
+    paddingBottom: 12,
   },
   countText: {
-    color: "#888",
+    color: MUTE,
     fontSize: 14,
+    marginTop: 14,
   },
   grid: {
-    paddingHorizontal: 40,
+    paddingHorizontal: SIDE_PAD,
+    paddingTop: 8,
+    paddingBottom: 24,
   },
   row: {
-    gap: 8,
-    marginBottom: 8,
+    gap: COL_GAP,
+    marginBottom: COL_GAP,
   },
-  photoWrapper: {
+  tileWrap: {
     width: PHOTO_SIZE,
     height: PHOTO_SIZE,
-    borderRadius: 8,
+    borderRadius: radius.sm,
     overflow: "hidden",
-  },
-  photoSelected: {
     borderWidth: 3,
-    borderColor: "#7c4dff",
+    borderColor: "transparent",
+    position: "relative",
   },
-  photo: {
+  tileSelected: {
+    borderColor: colors.primary,
+  },
+  tileImage: {
     width: "100%",
     height: "100%",
   },
   checkOverlay: {
     position: "absolute",
-    top: 4,
-    right: 4,
-    backgroundColor: "#7c4dff",
+    top: 6,
+    right: 6,
     width: 24,
     height: 24,
     borderRadius: 12,
+    backgroundColor: colors.primary,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowRadius: 6,
+    shadowOpacity: 0.35,
   },
-  checkmark: {
-    color: "#fff",
+  importWrap: {
+    paddingHorizontal: SIDE_PAD,
+    paddingBottom: 32,
+    paddingTop: 12,
+    backgroundColor: colors.bg,
+  },
+  progressWrap: {
+    alignItems: "center",
+    gap: 8,
+    paddingVertical: 16,
+  },
+  progressText: {
+    color: colors.primarySoft,
     fontSize: 14,
-    fontWeight: "bold",
-  },
-  importButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginHorizontal: 40,
-    marginTop: 12,
-  },
-  importButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  cancelButton: {
-    alignItems: "center",
-    paddingVertical: 14,
-    marginBottom: 20,
-  },
-  cancelText: {
-    fontSize: 16,
-    color: "#888",
   },
 });

@@ -10,8 +10,11 @@ import {
 } from "react-native";
 import * as Calendar from "expo-calendar";
 import { NativeStackNavigationProp } from "@react-navigation/native-stack";
-import { supabase } from "@memoria/core";
-import { useAuth } from "@memoria/core";
+import { supabase, useAuth } from "@memoria/core";
+import { colors, radius } from "@memoria/core";
+import { SpringPressable } from "../../../motion/primitives";
+import { ShimmerButton } from "../../../motion/ui";
+import { FlowNav, FlowHeader, ObCheck, MUTE } from "../FlowLayout";
 
 type Props = {
   navigation: NativeStackNavigationProp<any>;
@@ -25,6 +28,32 @@ interface CalendarEvent {
   notes: string;
   selected: boolean;
   alreadyImported: boolean;
+  dayAbbrev: string;
+}
+
+function getDayAbbrev(dateStr: string): string {
+  try {
+    return new Date(dateStr)
+      .toLocaleDateString("en-US", { weekday: "short" })
+      .toUpperCase()
+      .slice(0, 3);
+  } catch {
+    return "---";
+  }
+}
+
+function formatDate(dateStr: string): string {
+  try {
+    return new Date(dateStr).toLocaleDateString("en-US", {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    });
+  } catch {
+    return dateStr;
+  }
 }
 
 export default function ImportCalendarScreen({ navigation }: Props) {
@@ -48,10 +77,11 @@ export default function ImportCalendarScreen({ navigation }: Props) {
       return;
     }
 
-    const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+    const calendars = await Calendar.getCalendarsAsync(
+      Calendar.EntityTypes.EVENT
+    );
     const calendarIds = calendars.map((c) => c.id);
 
-    // Get events from past month to 3 months ahead
     const startDate = new Date();
     startDate.setMonth(startDate.getMonth() - 1);
     const endDate = new Date();
@@ -63,7 +93,6 @@ export default function ImportCalendarScreen({ navigation }: Props) {
       endDate
     );
 
-    // Fetch already-imported events to filter them out
     const { data: existingEvents } = await supabase
       .from("events")
       .select("title, event_date")
@@ -87,10 +116,12 @@ export default function ImportCalendarScreen({ navigation }: Props) {
           notes: e.notes || "",
           selected: false,
           alreadyImported: existingKeys.has(key),
+          dayAbbrev: getDayAbbrev(String(e.startDate)),
         };
       })
       .sort((a, b) => {
-        if (a.alreadyImported !== b.alreadyImported) return a.alreadyImported ? 1 : -1;
+        if (a.alreadyImported !== b.alreadyImported)
+          return a.alreadyImported ? 1 : -1;
         return new Date(a.startDate).getTime() - new Date(b.startDate).getTime();
       });
 
@@ -99,8 +130,8 @@ export default function ImportCalendarScreen({ navigation }: Props) {
   }
 
   function toggleEvent(id: string) {
-    setEvents(
-      events.map((e) =>
+    setEvents((arr) =>
+      arr.map((e) =>
         e.id === id && !e.alreadyImported ? { ...e, selected: !e.selected } : e
       )
     );
@@ -108,16 +139,16 @@ export default function ImportCalendarScreen({ navigation }: Props) {
 
   function selectAll() {
     const selectable = events.filter((e) => !e.alreadyImported);
-    const allSelected = selectable.length > 0 && selectable.every((e) => e.selected);
-    setEvents(events.map((e) => e.alreadyImported ? e : { ...e, selected: !allSelected }));
+    const allSelected =
+      selectable.length > 0 && selectable.every((e) => e.selected);
+    setEvents((arr) =>
+      arr.map((e) => (e.alreadyImported ? e : { ...e, selected: !allSelected }))
+    );
   }
 
   async function handleImport() {
     const selected = events.filter((e) => e.selected);
-    if (selected.length === 0) {
-      Alert.alert("Please select at least one event to import");
-      return;
-    }
+    if (selected.length === 0) return;
 
     setImporting(true);
     try {
@@ -140,54 +171,53 @@ export default function ImportCalendarScreen({ navigation }: Props) {
         `${selected.length} event${selected.length > 1 ? "s" : ""} imported.`,
         [{ text: "OK", onPress: () => navigation.goBack() }]
       );
-    } catch (error: any) {
-      Alert.alert("Error", error.message);
+    } catch (err: any) {
+      Alert.alert("Error", err.message);
     } finally {
       setImporting(false);
     }
   }
 
-  function formatDate(dateStr: string) {
-    const d = new Date(dateStr);
-    return d.toLocaleDateString("en-US", {
-      weekday: "short",
-      month: "short",
-      day: "numeric",
-      hour: "numeric",
-      minute: "2-digit",
-    });
-  }
-
   const selectedCount = events.filter((e) => e.selected).length;
+  const selectable = events.filter((e) => !e.alreadyImported);
+  const allSelected =
+    selectable.length > 0 && selectable.every((e) => e.selected);
   const now = new Date();
 
   if (loading) {
     return (
       <View style={styles.centered}>
-        <ActivityIndicator size="large" color="#7c4dff" />
-        <Text style={styles.loadingText}>Loading calendar events...</Text>
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={styles.loadingText}>Loading calendar events…</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.container}>
+      {/* Fixed header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Import Calendar</Text>
-        <Text style={styles.subtitle}>
-          Import events from the past month and upcoming 3 months
-        </Text>
+        <FlowNav
+          onBack={() => navigation.goBack()}
+          onClose={() => navigation.goBack()}
+        />
+        <FlowHeader
+          title="Import Calendar"
+          sub="Events from the last month and next three"
+        />
 
-        <View style={styles.headerActions}>
+        {/* Toolbar */}
+        <View style={styles.toolbar}>
           <TouchableOpacity onPress={selectAll}>
             <Text style={styles.selectAllText}>
-              {events.every((e) => e.selected) ? "Deselect All" : "Select All"}
+              {allSelected ? "Deselect all" : "Select all"}
             </Text>
           </TouchableOpacity>
           <Text style={styles.countText}>{selectedCount} selected</Text>
         </View>
       </View>
 
+      {/* List */}
       <FlatList
         data={events}
         keyExtractor={(item) => item.id}
@@ -195,63 +225,54 @@ export default function ImportCalendarScreen({ navigation }: Props) {
         renderItem={({ item }) => {
           const isPast = new Date(item.startDate) < now;
           return (
-            <TouchableOpacity
-              style={[
-                styles.eventItem,
-                item.selected && styles.eventItemSelected,
-                item.alreadyImported && styles.eventItemImported,
-              ]}
+            <SpringPressable
               onPress={() => toggleEvent(item.id)}
               disabled={item.alreadyImported}
+              style={[
+                styles.eventRow,
+                item.selected && styles.eventRowSelected,
+                item.alreadyImported && styles.eventRowImported,
+              ]}
             >
+              {/* Day chip */}
+              <View style={styles.dayChip}>
+                <Text style={styles.dayChipText}>{item.dayAbbrev}</Text>
+              </View>
+
               <View style={styles.eventInfo}>
-                <Text style={[styles.eventTitle, item.alreadyImported && styles.importedText]}>{item.title}</Text>
-                <Text style={styles.eventDate}>
-                  {formatDate(item.startDate)}
+                <Text
+                  style={[
+                    styles.eventTitle,
+                    item.alreadyImported && styles.dimText,
+                  ]}
+                >
+                  {item.title}
                 </Text>
+                <Text style={styles.eventDate}>{formatDate(item.startDate)}</Text>
                 {item.alreadyImported ? (
                   <Text style={styles.importedBadge}>Already imported</Text>
                 ) : isPast ? (
                   <Text style={styles.pastBadge}>Past</Text>
                 ) : null}
               </View>
-              {!item.alreadyImported && (
-                <View
-                  style={[
-                    styles.checkbox,
-                    item.selected && styles.checkboxChecked,
-                  ]}
-                >
-                  {item.selected && <Text style={styles.checkmark}>✓</Text>}
-                </View>
-              )}
-            </TouchableOpacity>
+
+              {!item.alreadyImported && <ObCheck on={!!item.selected} />}
+            </SpringPressable>
           );
         }}
       />
 
+      {/* Fixed import button */}
       {selectedCount > 0 && (
-        <TouchableOpacity
-          style={styles.importButton}
-          onPress={handleImport}
-          disabled={importing}
-        >
-          {importing ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.importButtonText}>
-              Import {selectedCount} Event{selectedCount > 1 ? "s" : ""}
-            </Text>
-          )}
-        </TouchableOpacity>
+        <View style={styles.importWrap}>
+          <ShimmerButton
+            label={`Import ${selectedCount} event${selectedCount > 1 ? "s" : ""}`}
+            onPress={handleImport}
+            disabled={importing}
+            hero
+          />
+        </View>
       )}
-
-      <TouchableOpacity
-        style={styles.cancelButton}
-        onPress={() => navigation.goBack()}
-      >
-        <Text style={styles.cancelText}>Cancel</Text>
-      </TouchableOpacity>
     </View>
   );
 }
@@ -259,135 +280,110 @@ export default function ImportCalendarScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
   },
   centered: {
     flex: 1,
-    backgroundColor: "#1a1a2e",
+    backgroundColor: colors.bg,
     justifyContent: "center",
     alignItems: "center",
   },
   loadingText: {
-    color: "#e0e0e0",
+    color: colors.fg,
     fontSize: 16,
     marginTop: 12,
   },
   header: {
-    padding: 40,
-    paddingTop: 80,
-    paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingTop: 72,
+    paddingBottom: 12,
   },
-  title: {
-    fontSize: 32,
-    fontWeight: "bold",
-    color: "#b388ff",
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    color: "#e0e0e0",
-    marginBottom: 16,
-  },
-  headerActions: {
+  toolbar: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+    marginBottom: 4,
   },
   selectAllText: {
-    color: "#7c4dff",
-    fontSize: 16,
+    color: colors.primary,
+    fontSize: 15,
     fontWeight: "600",
   },
   countText: {
-    color: "#888",
+    color: MUTE,
     fontSize: 14,
   },
   list: {
-    paddingHorizontal: 40,
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+    gap: 8,
   },
-  eventItem: {
-    backgroundColor: "#2a2a4a",
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
+  eventRow: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-  },
-  eventItemSelected: {
+    gap: 13,
     borderWidth: 2,
-    borderColor: "#7c4dff",
+    borderColor: "transparent",
+  },
+  eventRowSelected: {
+    borderColor: colors.primary,
+  },
+  eventRowImported: {
+    opacity: 0.5,
+  },
+  dayChip: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surfaceSunk,
+    alignItems: "center",
+    justifyContent: "center",
+    flexShrink: 0,
+  },
+  dayChipText: {
+    color: colors.primarySoft,
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
   eventInfo: {
     flex: 1,
   },
   eventTitle: {
-    fontSize: 17,
+    fontSize: 16.5,
     fontWeight: "600",
-    color: "#fff",
+    color: colors.fgStrong,
   },
   eventDate: {
-    fontSize: 14,
-    color: "#b388ff",
-    marginTop: 4,
+    fontSize: 13,
+    color: colors.primarySoft,
+    marginTop: 3,
   },
   pastBadge: {
     fontSize: 12,
-    color: "#888",
-    marginTop: 4,
+    color: MUTE,
+    marginTop: 3,
     fontStyle: "italic",
-  },
-  checkbox: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    borderWidth: 2,
-    borderColor: "#555",
-    justifyContent: "center",
-    alignItems: "center",
-    marginLeft: 12,
-  },
-  checkboxChecked: {
-    backgroundColor: "#7c4dff",
-    borderColor: "#7c4dff",
-  },
-  checkmark: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "bold",
-  },
-  importButton: {
-    backgroundColor: "#7c4dff",
-    paddingVertical: 18,
-    borderRadius: 12,
-    alignItems: "center",
-    marginHorizontal: 40,
-    marginTop: 12,
-  },
-  importButtonText: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#fff",
-  },
-  cancelButton: {
-    alignItems: "center",
-    paddingVertical: 14,
-    marginBottom: 20,
-  },
-  cancelText: {
-    fontSize: 16,
-    color: "#888",
-  },
-  eventItemImported: {
-    opacity: 0.5,
-  },
-  importedText: {
-    color: "#888",
   },
   importedBadge: {
     fontSize: 12,
-    color: "#7c4dff",
-    marginTop: 4,
+    color: colors.primary,
+    marginTop: 3,
     fontStyle: "italic",
+  },
+  dimText: {
+    color: MUTE,
+  },
+  importWrap: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+    paddingTop: 12,
+    backgroundColor: colors.bg,
   },
 });
