@@ -249,8 +249,51 @@ The full W2 voice loop was built for `apps/kiosk` and validated end-to-end (Hey 
 ### Security Note
 The `service_role` key was accidentally pasted into `.env.local` (second occurrence — also flagged May 30). It was cleared from the file immediately and `.env.local` is gitignored so it never reached the repo. Rotate the key in Supabase Dashboard → Settings → API before any production use.
 
-### Flags for Next Session
+### Flags for Next Session (W2)
 - `AudioUnlockGate` ignores the `isAudioUnlocked()` sessionStorage flag on remount — gate re-shows within the same browser session on a hard reload. Fix: add a mount effect `if (isAudioUnlocked()) setUnlocked(true)`. Low priority for now.
 - Wake word false triggers: "hey memo" appearing in any sentence fires the wake. Acceptable for demo; Picovoice (acoustic) is the proper fix — see `future-implementations.md`.
 - Briefing "pause" restarts the current slide from the beginning (no true resume). Acceptable for the patient audience; documented in `future-implementations.md`.
 - Supabase project risks pausing due to inactivity — hit it weekly or set up a keep-alive ping.
+
+---
+
+### Kiosk Web App — Sign-in & Auth Gate
+
+The kiosk had no authentication gate — the app was fully accessible without signing in, which meant `userId` was always null. Every feature that depended on it (voice loop, assistant, briefing) either silently failed or showed "Please sign in."
+
+**Sign-in screen.** `components/SignIn.tsx` was added: a full-screen, on-brand sign-in form (logo, large email/password fields, primary "Sign In" button, error feedback). A helper note tells the patient that their account was set up by a family member, since patients don't self-register. The form uses `useAuth().signIn()` from `@memoria/core`.
+
+**Auth gate.** `app/Providers.tsx` was updated with an `AuthGate` component that wraps the entire app inside `AuthProvider`. The gate renders a spinner while the session loads, the sign-in form when unauthenticated, and children once authenticated. `AudioUnlockGate` was moved inside the gate so co-users bypass it entirely — it's only needed for the patient's audio-first kiosk UX.
+
+With auth in place, all four prior issues resolved: the voice loop now calls `askAssistant` with a valid `userId`; the assistant page no longer shows "Please sign in"; the briefing loads from the database; and the home greeting fires after unlock.
+
+### Kiosk Web App — Co-User Portal (Milestone 1)
+
+Co-users were incorrectly landing on the patient kiosk after login. The portal now routes each role to the correct experience and provides a complete co-user dashboard shell.
+
+**Role-based routing.** `AuthGate` in `Providers.tsx` now reads `role` from the auth context after session load. A `useEffect` redirects `co_user` → `/co-user` and `user` away from `/co-user/*`; a synchronous guard shows a spinner during the in-flight redirect so the wrong UI never flashes. Co-users bypass `AudioUnlockGate`; patients continue to use it.
+
+**Co-user layout.** `app/co-user/layout.tsx` wraps all `/co-user/*` routes with a persistent top navigation bar: the Memoria logo (links back to the dashboard) and a Sign Out button. The layout is a client component so it can call `useAuth().signOut()` directly.
+
+**Co-user dashboard.** `app/co-user/CoUserHomeClient.tsx` is the full management hub, mirroring the mobile `CoUserHomeScreen` in web form. On mount it fires seven parallel Supabase queries: patient full name, life facts count, people count, events count, photos count (excluding hidden), pending flag queue count, and tomorrow's briefing status via `getBriefingForDate`. The dashboard renders:
+- A greeting header ("Caring for [Patient Name]" + today's date)
+- A stat card row (Life Facts, People, Events, Photos, Pending Review — the last highlighted in red when > 0)
+- A **Dashboard** section: a hero card for Tomorrow's Briefing (gradient background, live status badge — Not generated / Draft ready / Approved / Delivered — and a contextual CTA) plus action cards for Photos, People, Events, Memo's Notes, Review Queue, and Safety & Filters
+- An **Add** section: Life Facts, People, Events
+- An **Import** section: Calendar (Google Calendar OAuth2 + `.ics` file upload as fallback), Photos
+- A **Settings & Tools** section: Life Facts, Set Up Their Login, Emergency Contact
+
+**Shared `PageHeader` component.** `components/co-user/PageHeader.tsx` provides a consistent back-link, title, optional subtitle, and action slot for all co-user sub-pages.
+
+**Plan for remaining milestones:**
+- **M2 — Onboarding wizard**: multi-step flow (Create Profile → Life Facts → People → Events) shown when `userId` is null
+- **M3 — People**: list view, add form, edit form
+- **M4 — Life Facts & Events**: list views, add forms; Calendar import (Google OAuth2 + `.ics` upload)
+- **M5 — Photos**: grid with status filters, web file-picker import with Supabase upload + AI pipeline
+- **M6 — AI & Review**: Flag Queue, Memo's Notes (AI Memory), Briefing Preview with generate/edit/approve
+- **M7 — Settings**: Sensitivity Filters, Set Up Their Login, Emergency Contact
+
+### Next Steps
+- Continue building co-user portal milestones M2–M7 in order
+- All nav cards on the dashboard link to routes that don't exist yet — each milestone fills them in
+- Test the role-routing end-to-end: co-user login → dashboard; patient login → kiosk home
