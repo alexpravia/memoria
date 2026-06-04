@@ -11,7 +11,7 @@
 // `recall_about_user` tool. The structure here is intentionally easy
 // to extend: add a `TOOL_DEFINITIONS` entry + a matching handler.
 
-import { searchMemories, type EmbeddingKind } from "./embeddings";
+import { searchMemories, type SearchKind } from "./embeddings";
 import {
   rememberAboutUser,
   recallAboutUser,
@@ -46,7 +46,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     name: "search_memories",
     description:
-      "Semantic search across the user's photos, life facts, people, and events. Use this when looking up things by meaning rather than exact name (e.g. 'show me beach photos', 'what do I love about my garden').",
+      "Semantic search across the user's photos, life facts, people, events, uploaded documents, and the caregiver's freeform narrative about them. Use this when looking up things by meaning rather than exact name (e.g. 'show me beach photos', 'what do I love about my garden', 'what did the caregiver say about her childhood').",
     parameters: {
       type: "object",
       properties: {
@@ -58,7 +58,14 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
           type: "array",
           items: {
             type: "string",
-            enum: ["media", "life_facts", "people", "events"],
+            enum: [
+              "media",
+              "life_facts",
+              "people",
+              "events",
+              "documents",
+              "narrative",
+            ],
           },
           description:
             "Optional restriction of memory kinds to search. Defaults to all kinds.",
@@ -238,9 +245,9 @@ export const TOOL_HANDLERS: Record<string, ToolHandler> = {
       // every verified photo on the user. If the caller explicitly asked
       // for more, honour their (clamped) value.
       const fallbackLimit = callerLimit !== undefined ? limit : 1;
-      const kinds: EmbeddingKind[] | undefined =
+      const kinds: SearchKind[] | undefined =
         Array.isArray(args?.kinds) && args.kinds.length > 0
-          ? (args.kinds as EmbeddingKind[])
+          ? (args.kinds as SearchKind[])
           : undefined;
       const results = await searchMemories(ctx.userId, query, {
         limit,

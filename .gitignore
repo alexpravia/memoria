@@ -8,4 +8,4 @@ node_modules/
 **/node_modules/
 
 # supabase temp files
-/apps/mobile/supabase/.temp/
+/supabase/.temp/

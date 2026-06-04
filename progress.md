@@ -324,3 +324,45 @@ Two fixes were applied. First, `packages/core/package.json` moved `react` from `
 - Verify the Metro fix resolves the startup crash on the iOS simulator end-to-end
 - Continue building co-user portal milestones M2–M7 in order
 - Test the mobile app's Add & Import screen redesign on device once the simulator is working
+
+---
+
+## June 3–4, 2026
+
+### Planning — Voice Navigation, Proactive Engagement, and a Restructured Plan
+
+Two new themes were added to `LLM-plan.md` (bumped to v1.1). **Theme K — Voice-Triggered Navigation Agents** reframes navigation as a first-class agentic capability: instead of pattern-matching nav commands, the assistant calls a `navigate_to` tool and the kiosk routes to a screen (e.g. "show me pictures of Maria" → photo gallery filtered by Maria). It specifies a `navigation` field on the `ask-assistant` response envelope, the new tool schema, and the kiosk screens needed (PhotoBrowse, Calendar, Person). **Theme L — Proactive Engagement & Ambient Presence** addresses the single most important product gap: memory-care patients forget the device exists, so Memo must initiate contact. It defines five layers — scheduled calendar-driven nudges, idle-state suggestions, daily "This Day in Your Life" memory surfacing, emotional check-ins, and re-engagement after long silence — plus the supporting schema (`daily_nudges` table, `co_users.proactive_settings`) and a new `generate-nudge` Edge Function. The roadmap tables gained a medium-term Navigation & Engagement track (items 15–22) and four new guiding principles (navigation-is-a-tool, proactive-presence, grounded-content, Memo-speaks-first).
+
+`plan.md` was fully restructured around the current reality of the project: a **voice-first web kiosk** (Alexa/Nest-Hub-like) for the patient plus the preserved React Native mobile app for the co-user, sharing one AI/data layer. The rewrite captures the founding design constraint — *the patient should not have to USE anything; Memo speaks to them first, reactive chat is secondary* — and lays out the two-experience model, the full architecture, a completed/in-progress/upcoming feature roadmap, pending actions, and a concrete immediate build order. Four new co-user features were folded into the M2–M7 milestone plan: **primary-contact** flagging on people, **recurring-event** support (discovered to already exist in the schema as `event_type` + `recurrence_rule` — UI-only work), **bulk document & image upload**, and a **"Write About Them"** freeform narrative that the AI uses for RAG the way an LLM uses a context `.md` file.
+
+### "Write About Them" + Document/People/Events Data Layer
+
+The full backend for the narrative and document features was built and verified behind the green gate (147 tests: 123 core + 24 kiosk; tsc clean across all three workspaces). **No UI was built and nothing was deployed** — this is plumbing the M2 wizard will sit on top of.
+
+**Migrations** (in `supabase/`, written but not yet applied to the live project):
+- `add_primary_contact.sql` — `people.is_primary_contact boolean` (metadata-only add, no table rewrite) plus a partial index for "who are this patient's primary contacts?". Primary contacts will be surfaced first in briefings, always included in the emergency card, and prioritized by the nudge engine.
+- `add_documents_and_narratives.sql` — four new **chunked** RAG tables: `documents` + `document_chunks` and `user_narratives` + `narrative_chunks`. Unlike the four core tables (which embed a single vector on the row), these split one logical source into many embedded chunks. Each chunk table has a `vector(1536)` embedding with an **HNSW** index (chosen over IVFFlat because the chunk tables grow incrementally and stay small per-user, where IVFFlat's fixed lists hurt recall) and a generated `fts` tsvector column via a new `memoria_chunk_fts` immutable function (mirroring the `add_hybrid_search.sql` pattern). RLS mirrors the established co-user/self pattern. Both retrieval RPCs — `match_memories` (dense) and `match_memories_hybrid` (dense + lexical RRF) — were extended with `documents` and `narrative` UNION arms and now include both kinds in their default `p_kinds` lists. The `events` table needed **no** migration: it already carries `event_type` (`one_time`/`recurring`/`routine`) and `recurrence_rule`; recurrence is purely a UI-exposure task for M4.
+
+**Edge Function** — `supabase/functions/process-narrative/index.ts`: accepts `{ user_id, raw_text }`, upserts the raw narrative, deletes and re-creates `narrative_chunks` (paragraph-first, sentence-fallback chunker → batch-embed → insert), and runs a second LLM call with strict **Structured Outputs** to extract suggested people, life facts, events, and sensitivity hints. The suggestions are **returned for co-user review, never auto-written** to core tables — preserving the safety rule that AI never populates patient-facing data without human verification. Extraction is best-effort (RAG storage succeeds even if extraction fails).
+
+**Shared core** (`packages/core/`):
+- Split the kind types: `EmbeddingKind` stays the four write-path tables (embedded on the row via `embedAndStore`); a new `SearchKind` superset adds `documents` + `narrative` for the read path. `MemoryMatch.kind`, `SearchMemoriesOpts.kinds`, and `DEFAULT_KINDS` were widened to the six read kinds, so client searches now include narrative + documents by default.
+- New `narrative.ts` client wrapper (`getNarrative`, `saveNarrative` returning the suggestions envelope) + `index.ts` export + `narrative.test.ts` (7 tests). The `embeddings.test.ts` default-kinds assertion was updated to the new six-kind contract.
+
+**Live assistant wiring** — `ask-assistant/index.ts`: the mirrored `search_memories` tool definition (enum + description) and the hardcoded kinds fallback were updated to include `documents` and `narrative`, so once redeployed Memo actually retrieves the narrative and documents (the RPC default alone wasn't enough because the Edge Function passes an explicit fallback array).
+
+### Repo Restructure — supabase/ Moved to Root
+
+The shared backend folder was moved from `apps/mobile/supabase/` to the **repo root** `supabase/` (sibling to `apps/` and `packages/`). It had been buried under one app despite being shared by both. Root is the Supabase CLI's expected location (deploys run from root with no `--workdir`) and makes every existing reference correct — `CLAUDE.md`, `LLM-plan.md`, and code comments already wrote the path root-relative as `supabase/functions/...`. The dead `"exclude": ["supabase/functions"]` was removed from `apps/mobile/tsconfig.json`, and the `.gitignore` temp rule was repointed to `/supabase/.temp/`. As a cleanup bonus, the CLI `.temp/` state files (which had been accidentally tracked) are now untracked at the new path while remaining on disk for CLI use.
+
+### Flags for Next Session
+- **M2 is the next build** — the co-user onboarding wizard (Create Profile → **Write About Them** + extraction-review UI → Life Facts → People → Events). This is where the narrative backend becomes visible/usable. Sonnet-appropriate UI work.
+- **Nothing is deployed.** The two migrations must be pasted into the Supabase Dashboard → SQL Editor, and `process-narrative` + `ask-assistant` must be deployed via `npx supabase functions deploy <name>` from the repo root (no global `supabase` CLI on this machine). Recommendation: build M2 first, then deploy once and test end-to-end, rather than poking the backend blind.
+- **Document _processing_ is not built** — only the `documents`/`document_chunks` tables exist. The document-ingestion Edge Function (M5) has an open decision: how to extract text from PDFs/DOCX inside a Deno runtime (a JS PDF lib via esm.sh vs. images+plaintext-only for v1 vs. an external parser). Ask before building.
+- **Rotate the `service_role` key** — still outstanding from the May 30 / June 1 flags; do it before any real deploy.
+- HNSW indexes require pgvector ≥ 0.5 (Supabase has it); the documents/narratives migration creates only new tables + replaces two functions, so it does **not** trigger the heavy IVFFlat rebuild / `maintenance_work_mem` issue the hybrid-search migration hit.
+
+### Next Steps
+- Build co-user portal **M2** (onboarding wizard incl. "Write About Them" + extraction review), then deploy the data layer and test the narrative flow end-to-end in the web-app
+- Continue M3 (people + primary-contact toggle), M4 (life facts + recurring events UI), M5 (photos + document upload — resolve the Deno extraction decision first), M6 (flag queue, Memo's Notes, briefing preview), M7 (settings + proactive config)
+- Then the parallel kiosk track: `navigate_to` tool + PhotoBrowse/Calendar/Person screens, and the Layer-1 proactive nudge engine

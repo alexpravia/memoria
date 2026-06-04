@@ -132,6 +132,8 @@ describe("searchMemories", () => {
       "life_facts",
       "people",
       "events",
+      "documents",
+      "narrative",
     ]);
     expect(Array.isArray(call.args.p_query_embedding)).toBe(true);
   });

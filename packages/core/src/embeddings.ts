@@ -7,10 +7,17 @@
 
 import { supabase } from "./supabase";
 
+// Write-path kinds: the four core tables that carry an embedding ON the row
+// (via embedAndStore → UPDATE). Documents/narrative are NOT here — they are
+// chunked into separate *_chunks tables and embedded server-side on INSERT.
 export type EmbeddingKind = "media" | "life_facts" | "people" | "events";
 
+// Read-path kinds: everything searchable via match_memories, including the two
+// chunked sources. Use this for search queries and result discrimination.
+export type SearchKind = EmbeddingKind | "documents" | "narrative";
+
 export interface MemoryMatch {
-  kind: EmbeddingKind;
+  kind: SearchKind;
   id: string;
   text_snippet: string;
   similarity: number;
@@ -109,7 +116,7 @@ export async function embedAndStore(
 
 export interface SearchMemoriesOpts {
   limit?: number;
-  kinds?: EmbeddingKind[];
+  kinds?: SearchKind[];
   /**
    * Minimum cosine similarity (0..1) a row must clear to be returned. Defaults
    * to 0 (no filtering) to preserve raw recall for callers like the eval
@@ -118,11 +125,13 @@ export interface SearchMemoriesOpts {
   minSimilarity?: number;
 }
 
-const DEFAULT_KINDS: EmbeddingKind[] = [
+const DEFAULT_KINDS: SearchKind[] = [
   "media",
   "life_facts",
   "people",
   "events",
+  "documents",
+  "narrative",
 ];
 
 /**
@@ -158,7 +167,7 @@ export async function searchMemories(
     if (!data) return [];
 
     return (data as any[]).map((row) => ({
-      kind: row.kind as EmbeddingKind,
+      kind: row.kind as SearchKind,
       id: row.id as string,
       text_snippet: (row.text_snippet ?? "") as string,
       similarity: Number(row.similarity ?? 0),

@@ -77,7 +77,7 @@ const TOOL_DEFINITIONS = [
   {
     name: "search_memories",
     description:
-      "Semantic search across the user's photos, life facts, people, and events. Use this when looking up things by meaning rather than exact name.",
+      "Semantic search across the user's photos, life facts, people, events, uploaded documents, and the caregiver's freeform narrative about them. Use this when looking up things by meaning rather than exact name.",
     parameters: {
       type: "object",
       properties: {
@@ -86,7 +86,14 @@ const TOOL_DEFINITIONS = [
           type: "array",
           items: {
             type: "string",
-            enum: ["media", "life_facts", "people", "events"],
+            enum: [
+              "media",
+              "life_facts",
+              "people",
+              "events",
+              "documents",
+              "narrative",
+            ],
           },
         },
         limit: { type: "integer", minimum: 1, maximum: 10 },
@@ -233,7 +240,9 @@ function makeHandlers(supabase: any, userId: string) {
       p_query_embedding: queryEmbedding,
       p_query_text: query,
       p_match_count: limit,
-      p_kinds: kinds ?? ["media", "life_facts", "people", "events"],
+      p_kinds:
+        kinds ??
+        ["media", "life_facts", "people", "events", "documents", "narrative"],
       p_min_similarity: minSimilarity,
     });
     if (error) throw new Error(error.message);

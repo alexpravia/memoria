@@ -1,212 +1,244 @@
-# Memoria — Development Plan
+# Memoria — Product & Development Plan
+
+*Last updated: June 3, 2026*
 
 ---
 
-## Core Concept
+## What Memoria Is
 
-A real-time context generator that fills in the gaps of memory for people with Alzheimer's, dementia, and other memory impairments. The app combines a co-user's emotional intelligence with AI processing to build a personal database of the user's life — their identity, relationships, routines, and memories — and uses that database to keep them connected to reality every day.
+Memoria is a **voice-first ambient companion** for people with Alzheimer's, dementia, and other memory impairments. It sits in their home like an Echo Show or Google Nest Hub — always on, always listening, always ready — but it knows their actual life: their family, their history, their routines, and their feelings.
+
+It is not a generic assistant. It is a personal AI built from the co-user's (caregiver's) emotional intelligence and the patient's own life data. Every photo, every person, every event they've lived through is in Memoria's memory. Memo (the AI) can answer questions, surface memories, read briefings, navigate to content, and reach out to the patient throughout the day — gently, warmly, and accurately.
+
+The product has two distinct experiences sharing one AI/data layer:
+- **The Kiosk** — a voice-first web app for the patient. Alexa-like ambient device. Minimal UI, everything spoken.
+- **The Mobile App** — a management dashboard for the co-user. Full-featured React Native app for caregivers.
 
 ---
 
 ## Core Principles
 
-1. **Simplicity above all.** Every screen, interaction, and word must be as simple as possible. The user has memory problems — complexity is the enemy.
-2. **Aid, not cure.** We help people live better with memory loss. We are not a medical treatment.
-3. **It is a spectrum.** A cognitive level system adapts the experience to the user's degree of impairment.
-4. **Nothing reaches the user without verification.** All AI-processed content is flagged for co-user review before the user ever sees it.
-5. **Audio-first.** Listening is easier than reading. The app should be usable passively through voice.
-6. **Human + AI together.** The co-user provides emotional context and oversight. The AI handles data processing, organization, and delivery.
+1. **Simplicity above all.** The patient has memory problems. Every screen, word, and interaction must be as simple as possible. When in doubt, remove it.
+2. **Audio-first.** Listening is easier than reading. Everything shown to the patient should also be spoken. The device should be usable passively — eyes closed, hands free.
+3. **Proactive presence.** Patients forget that tools exist. Memo must reach out to them — scheduled reminders, idle suggestions, memory surfacing — not just wait to be asked. The goal is ambient, continuous engagement.
+4. **Show, don't just tell.** When the answer to a question is a photo or a screen, navigate there. "Show me pictures of Maria" should show pictures, not describe them.
+5. **Nothing reaches the patient without verification.** All AI-processed content goes through the co-user before the patient sees it. Safety is non-negotiable.
+6. **Faithfulness over helpfulness.** For a dementia patient, a hallucinated family fact is not a UX failure — it is a harm. Memo must only say things it can ground in real retrieved data.
+7. **Human + AI together.** The co-user provides emotional context and oversight. Memo handles organization, retrieval, and delivery. Neither works without the other.
+8. **It is a spectrum.** Cognitive levels adapt the experience to the patient's degree of impairment — simpler language, shorter briefings, more frequent nudges.
 
 ---
 
 ## Architecture
 
-- **Frontend:** React Native (cross-platform, iOS priority)
-- **Backend:** Supabase (Postgres database, auth, file storage, edge functions, real-time sync)
-- **AI Services:**
-  - Facial recognition (photo tagging)
-  - Speech-to-text (journal transcription)
-  - Text-to-speech (briefings, conversations)
-  - NLP/LLM (summarization, conversational AI, document/photo recognition and sorting)
-- **Integrations:** Google Photos, iCloud, Facebook, Contacts, Calendar (Phase 1 stretch / Phase 2)
+### Platform
+- **Kiosk:** Next.js 15 App Router PWA (`apps/kiosk/`) — deployed to a browser on a fixed touchscreen device (laptop, Echo Show-equivalent). Voice loop with openWakeWord wake word, Web Speech STT, OpenAI TTS.
+- **Mobile:** React Native (Expo SDK 54) (`apps/mobile/`) — co-user management app. iOS priority, Android supported.
+- **Shared:** `packages/core/` — all AI, data, and auth logic shared between both apps via npm workspaces.
+
+### Backend
+- **Database:** Supabase Postgres with `pgvector` (1536-dim embeddings), RLS policies, real-time subscriptions
+- **Auth:** Supabase Auth — two roles: `user` (patient) and `co_user` (caregiver), routed to separate UX
+- **Storage:** Supabase Storage — photos bucket with public read, co-user-gated write
+- **Edge Functions (Deno, 7 total):**
+  - `ask-assistant` — agentic tool-calling loop (RAG + memory + navigation tools)
+  - `generate-briefing` — nightly AI slide deck + daily nudge schedule generation
+  - `process-photo` — vision pipeline (description, tags, people, review flag)
+  - `check-sensitivity` — intent-aware sensitivity classifier
+  - `embed` — text-embedding-3-small proxy
+  - `tts` — OpenAI TTS nova voice (raw audio bytes)
+  - `generate-nudge` — (planned) proactive idle/memory/check-in message generator
+
+### AI Stack
+- **LLM:** `gpt-4o-mini` (real-time: assistant, sensitivity, nudges) / `gpt-4o` (async: briefings, vision)
+- **Embeddings:** `text-embedding-3-small` (1536-dim)
+- **TTS:** OpenAI `tts-1` with `nova` voice — LRU disk cache, 5s fallback to `expo-speech` (mobile) / Web Speech (kiosk)
+- **Retrieval:** Dense pgvector + BM25 hybrid (Reciprocal Rank Fusion), similarity floor 0.65, top-5 injection
+- **All provider-agnostic** — model, URL, key all via env vars; swap without code changes
 
 ---
 
-## Two-UX Model
+## The Two Experiences
 
-### User Experience
-- Simple, calming, audio-driven
-- Large buttons, one thing on screen at a time
-- Cool purple color scheme
-- Minimal reading required — the app speaks to them
-- Conversational AI they can ask questions to
+### Kiosk — Patient UX
 
-### Co-User Experience
-- Management dashboard
-- Upload and organize data (photos, events, contacts, facts)
-- Review AI-flagged items (verification queue)
-- Set sensitivity filters (people, topics, time periods to avoid)
-- Receive notifications (flags, mood alerts, daily summaries)
-- Monitor user's experience to make sure everything is going smoothly
+The patient's device is always on. It sits in their home and knows their life.
 
----
+**Passive (no interaction needed):**
+- Morning briefing auto-starts (or speaks a welcome when they approach)
+- Scheduled nudges fire throughout the day based on their calendar and co-user config
+- Idle-state suggestions: after 3-5 minutes of silence, Memo gently offers something ("Here's a photo from last Christmas")
+- Memory surfacing: once daily, Memo shares a "This Day in Your Life" moment
+- Evening wrap-up: a brief "here's what happened today" before bedtime
 
-## Data Model
+**Active (voice or tap):**
+- "Hey Memo" wake word → voice query → spoken answer
+- "Show me pictures of Maria" → Memo navigates to photo gallery filtered by Maria
+- "What's on my schedule today?" → Memo navigates to calendar view and reads events
+- "Tell me about my grandson" → Memo navigates to person profile and reads it aloud
+- "Play my briefing" → briefing auto-advances with TTS
+- "I want to remember this" → Memo stores a pinned note
+- "Who is that?" (about a photo on screen) → Memo describes it
 
-### User Profile
-- Name, photo, DOB, location
-- Key life facts ("You retired from teaching in 2015")
-- Cognitive level (set and adjusted by co-user)
-- Preferences (audio speed, text size, language)
+**Design rules:**
+- One thing on screen at a time. No menus. No lists longer than 5 items.
+- Large text. High contrast. Full audio on everything.
+- Every navigation has a "go back" (voice or tap) and a "read it to me" option.
+- Memo never pressures. If the patient ignores a nudge, Memo returns to idle silently.
 
-### People
-- Name, relationship to user, photo(s), contact info
-- Key facts about them
-- Emotional notes from co-user ("user loves talking about fishing with this person")
-- Sensitivity flags ("avoid mentioning health issues with this person")
+### Mobile App — Co-User UX
 
-### Media
-- Photos/videos with metadata: who's in it, when, where, description
-- Verification status: pending, verified, hidden
-- AI-generated tags and facial recognition data
+The caregiver's management hub. Used daily to keep Memoria accurate and the patient safe.
 
-### Events
-- Past events (what happened, who was there, how user felt)
-- Future events (appointments, birthdays, plans)
-- Recurring routines (daily, weekly)
+**Dashboard:** Stats (life facts, people, events, photos, pending reviews), quick actions, briefing status, tomorrow's briefing CTA.
 
-### Journal Entries
-- Raw audio recordings timestamped throughout the day
-- AI-generated transcription
-- AI-generated daily summary
-- User's end-of-day recall attempt (recorded and transcribed)
-- Co-user review status
+**Data management:** Add/edit life facts, people (with editing for imported contacts), events. Import from contacts, calendar, photos. Bulk AI re-tag.
 
-### Co-User
-- Linked to user, relationship, permissions
-- Notification preferences
-- Sensitivity filters (people, topics, time periods to hide across all features)
-- Flag review queue
+**AI management:** Memo's Notes (review/edit/pin/suppress Memo's persistent memories), Briefing Preview (generate/edit/approve tomorrow's briefing), sensitivity filters, flag review queue.
 
-### Pinned Notes ("Things I Want to Remember")
-- User-initiated voice notes stored as pinned items
-- Rotated into briefings
-- Co-user can review/manage
+**Settings:** Emergency contact, set up patient login, notification preferences, proactive engagement settings (which layers are on, what times).
 
 ---
 
-## Sensitivity Layer
+## Feature Roadmap
 
-A centralized system in the co-user dashboard where they can define boundaries for the AI:
-- **People to avoid:** "Don't show anything with Uncle Robert"
-- **Time periods to avoid:** "Skip anything from 2019"
-- **Topics to avoid:** "Don't mention the hospital"
-- These filters apply globally — briefings, conversations, journal recaps, "This Day in Your Life", everything
-- The AI checks against these filters before surfacing any content
+### Completed — Mobile App (Phase 0 – 1C + AI Migration)
+- Role-based auth, two-UX navigation
+- Co-user onboarding: life facts, people, events, device imports (contacts, calendar, photos)
+- Patient experience: morning briefing, emergency card, AI assistant ("Memo")
+- AI photo pipeline: vision description, tags, people ID, review flag, verified gallery
+- Semantic sensitivity classifier (intent-based, not keyword-based)
+- Agentic Memo: RAG tool loop, 8 tools, conversation persistence, inline photos
+- Persistent assistant memory (Memo's Notes, co-user review)
+- AI-orchestrated briefings (6-12 slides, TTS pipeline, approval workflow)
+- Hybrid retrieval (dense + BM25 + RRF), similarity floor, structured outputs
+- Groundedness checking, output sensitivity re-check, conversation traces
+- Design system: theme tokens, custom SVG icon set, motion primitives
+- 140 unit tests, TypeScript clean
+
+### Completed — Kiosk W1 + W2
+- Next.js 15 monorepo, shared `@memoria/core` package
+- Voice loop: openWakeWord (ONNX pipeline), Web Speech STT, state machine (idle→wake→listen→think→speak→idle)
+- AudioUnlockGate, VoiceOrb animated UI, spacebar PTT fallback
+- Auto-advance briefing with TTS, prewarm, voice commands (next/again/stop)
+- Text chat assistant with TTS
+- Sign-in gate, role-based routing (patient → kiosk, co-user → portal)
+- Co-user portal M1: dashboard (stat cards, briefing status, all nav actions)
+
+### In Progress — Kiosk Co-User Portal (M2–M7)
+
+- **M2** — Onboarding wizard: Create Profile → Write About Them → Life Facts → People → Events
+- **M3** — People: list, add, edit; **primary contact flag** (surfaces first in briefings, always in emergency card, prioritized in nudges)
+- **M4** — Life Facts & Events: list, add; calendar import; **events support recurring flag + pattern** (daily/weekly/monthly/custom days — feeds proactive nudge scheduling)
+- **M5** — Media & Documents: photo grid + **bulk document/image upload** (PDFs, Word, text, images); AI batch processes all — extracts text, chunks, embeds, adds to `match_memories` as a new `documents` kind
+- **M6** — Flag Queue, Memo's Notes (AI Memory), Briefing Preview (generate/edit/approve)
+- **M7** — Sensitivity Filters, Set Up Login, Emergency Contact, proactive engagement settings
+
+#### "Write About Them" — Narrative Feature (new, part of M2 onboarding + standalone edit)
+
+Co-user writes a freeform stream-of-consciousness about the patient — no structure required. Example: *"Mom loves gardening, she's done it since the 70s. Her husband Robert passed in 2021. She gets anxious about medical topics. Loves Elvis and Frank Sinatra. Every Sunday she'd cook Italian dinner for the whole family..."*
+
+**Two things happen on save:**
+1. **RAG source** — narrative is chunked at sentence/paragraph boundaries, each chunk embedded and stored as a new `narrative` kind in `match_memories`. Memo queries this as high-priority context — it carries emotional intelligence that structured tables can't.
+2. **AI extraction** — a `process-narrative` Edge Function extracts structured suggestions: people mentioned (name, relationship, notes), life facts, recurring events, and sensitivity hints (topics/people the co-user signals to avoid). Suggestions are shown to the co-user for review (accept/reject per item, same pattern as flag queue). Accepted items insert into the proper tables.
+
+The narrative remains fully editable at any time. Re-saving re-runs extraction and re-embeds.
+
+#### Document & Image Upload — Schema Plan
+
+```
+documents         — file_url, file_type, processing_status, user_id
+document_chunks   — document_id, chunk_index, text, embedding (1536-dim)
+user_narratives   — user_id (unique), raw_text, last_edited_at
+narrative_chunks  — user_id, chunk_index, text, embedding
+```
+
+Both `document_chunks` and `narrative_chunks` participate in `match_memories` via new kinds: `documents`, `narrative`.
+
+#### People Schema Addition
+```sql
+ALTER TABLE people ADD COLUMN is_primary_contact boolean DEFAULT false;
+```
+Max 2-3 primary contacts enforced at app level. Primary contacts: always included in briefings, always in emergency card, prioritized in proactive nudges.
+
+#### Events — NO migration needed (schema already supports recurrence)
+The `events` table already has `event_type` (`one_time` | `recurring` | `routine`) and `recurrence_rule text`. Recurrence is already modeled — it's just not exposed in onboarding/UI. M4 work is purely UI: expose the `event_type` segmented control and a recurrence picker that writes `recurrence_rule` (convention: `weekly:monday,thursday` / `daily` / `monthly:15`). `routine` covers "things they do often." Recurring/routine events are the primary feed for Layer 1 proactive nudges.
+
+### Next — Voice Navigation (parallel with M2–M7)
+Voice-triggered navigation turns Memo from a chatbot into a navigator. When the user asks to SEE something, Memo calls a `navigate_to` tool and the kiosk routes there — no pattern matching, full AI understanding.
+
+- `navigate_to` tool added to ask-assistant tool set (tools.ts + Edge Function)
+- `navigation` field on ask-assistant response envelope
+- kiosk `useVoiceLoop` reads navigation intent and fires React Router push
+- **PhotoBrowseScreen** — filterable gallery (person, tags, date); each photo auto-captioned aloud
+- **CalendarScreen** — week/day event list; events read aloud on entry
+- **PersonScreen** — single person: photo, name, relationship, key facts, photos together; fully TTS'd
+
+### Next — Proactive Engagement Engine
+The biggest UX gap: patients forget Memo exists. The engagement engine closes this.
+
+**Layer 1 — Scheduled nudges (highest priority)**
+Nightly, `generate-briefing` also generates a `daily_nudges` schedule: timestamped messages tied to real events ("David is coming at 6 tonight"). Kiosk Supabase Realtime subscription fires TTS at the right time.
+
+**Layer 2 — Idle suggestions**
+After 3-5 minutes of kiosk silence, Memo surfaces something real from the database and speaks it gently. If ignored, returns to idle. Never repeats. Requires `generate-nudge` Edge Function.
+
+**Layer 3 — Memory surfacing ("This Day in Your Life")**
+Once daily (configurable time, e.g. 2pm), Memo surfaces a verified photo or event from past years on today's date. "Three years ago, you and Maria were at Thanksgiving. Here's a photo."
+
+**Layer 4 — Emotional check-ins**
+Once daily, Memo asks how the patient is feeling. Response logged, distress flagged to co-user. Seeds Phase 2 mood/tone awareness.
+
+**Layer 5 — Re-engagement after long silence**
+After 2+ hours of silence, soft chime + brief re-orientation: "Welcome back. It's 3 in the afternoon. I'm here if you need anything."
+
+### Phase 2 — "Tell Me About Your Day" (Voice Journaling)
+- Voice journaling: patient taps mic anytime to record a thought/moment
+- AI transcribes, timestamps, and stores each entry
+- End-of-day recall exercise: Memo asks "What do you remember from today?" → user recalls → Memo fills gaps
+- Daily summary generated and fed into tomorrow's briefing
+- Mood/tone awareness: distressed or confused voice patterns → co-user flagged
+- "Remember this" pinned notes → rotate into briefings
+- Voice-initiated from kiosk at any time
+
+### Phase 3 — Expanded Capabilities
+- **Cooking/Activity Assist** — voice-activated step tracker; "Did I add the salt?" → yes/no; alerts to turn off appliances
+- **Brain Stimulation** — daily trivia, stories, news readouts, simple games calibrated to cognitive level
+- **Familiar Voice Option** — co-user records key phrases; briefings and reminders use their voice instead of nova
+- **Photo Exploration** — "Show me my family" → scrollable, auto-described gallery; navigate to any person
+- **Multi-co-user support** — multiple family members linked to one patient, permissions-aware
+- **Facial recognition** — AWS Rekognition replaces GPT vision guessing for people identification
+
+### Phase 4 — Polish & Scale
+- Cognitive level system: adapts briefing depth, language complexity, nudge frequency, interaction style
+- Co-user analytics: recall trends, mood over time, engagement patterns, Memo usage stats
+- Community features (carefully moderated): connecting patients, caregiver support groups
+- Accessibility: vision impairment mode, motor-limited interaction, hearing impairment TTS adjustments
+- Hardware: pitch to Amazon/Google for Echo Show / Nest Hub native integration; explore Rabbit R1-style dedicated hardware
 
 ---
 
-## Development Phases
+## Pending Actions (before next session)
 
-### Phase 0: Project Setup & Foundation
-- Initialize React Native project
-- Set up Supabase (database, auth, storage)
-- Define and create database schema (all tables above)
-- Set up co-user and user auth flows (two roles, one app)
-- Basic navigation structure (user mode vs. co-user mode)
-
-### Phase 1: MVP — Morning Briefing + Co-User Onboarding
-
-**Co-User Onboarding Flow:**
-- Input user's core identity (name, photo, DOB, location, life facts)
-- Add family members / important people (names, photos, relationships, notes)
-- Upload photos → AI processes (facial recognition, tagging, sorting)
-- Add events (past, future, recurring)
-- Review AI-flagged items (verification queue)
-- Set sensitivity filters
-- Connect existing services to auto-import data instead of manual entry:
-  - **Google Photos / iCloud Photos:** Pull in photo library → AI processes, tags faces, organizes by date/people
-  - **Contacts:** Import contacts as "People" with names, phone numbers, relationships
-  - **Calendar (Google Calendar / Apple Calendar):** Sync events automatically — past and future
-  - **Facebook:** Pull photos, friends list, and life events
-  - This massively reduces the co-user's manual setup burden
-
-**Morning Briefing ("Start My Day"):**
-- One button to begin
-- Full audio + visual briefing:
-  1. "Good morning [name]. Today is [day, date]."
-  2. "You live in [location] with [family member(s)]."
-  3. Key identity facts
-  4. Family photos with names/relationships
-  5. Yesterday's recap
-  6. Past week highlights
-  7. Things they love / things that make them happy
-  8. Personal pinned notes ("things you wanted to remember")
-  9. Today's schedule
-  10. Tomorrow + rest of the week preview
-  11. "This Day in Your Life" — surfaced only from verified, sensitivity-checked content
-- User can pause, replay, skip sections
-- After briefing: conversational AI available for questions ("Who is Maria?", "What am I doing Thursday?", "When is my grandson's birthday?")
-
-**Gentle Reminders Throughout the Day:**
-- Spaced nudges, not just one morning dump
-- "This afternoon you have a doctor's appointment at 3"
-- "Tonight your son David is coming for dinner. Here's a photo of David."
-
-**Emergency Context Card:**
-- Quick-access screen (lock screen widget or persistent button)
-- Shows: name, address, emergency contact, condition
-- Available even when confused or away from home
-
-### Phase 2: "Tell Me About Your Day"
-- Voice journaling: user taps mic anytime to record a thought/moment
-- AI transcribes and timestamps each entry
-- End of day recall exercise:
-  1. AI asks: "Can you walk me through what you did today?"
-  2. User recalls what they can (recorded and transcribed)
-  3. AI compares recall vs. actual journal entries
-  4. AI fills in the gaps: "You also mentioned you went to the garden this afternoon"
-  5. Full day summary generated and stored
-  6. Summary feeds into tomorrow's briefing
-- Co-user gets notified to review the summary
-- Mood/tone awareness: AI flags if user sounded distressed, confused, or unusually quiet → co-user notified
-
-**"Things I Want to Remember":**
-- User says "remember this" at any point
-- AI stores it as a pinned note
-- Pinned notes rotate into briefings
-- Co-user can review and manage
-
-### Phase 3: Expanded Features
-- **Cooking/Activity Assist:** voice-activated step tracker, reminds user what they've already done, alerts to turn off appliances
-- **Brain Stimulation:** simple games, daily trivia, news readouts, stories, articles
-- **Photo Exploration:** "Show me my family" → scrollable, audio-described gallery
-- **Familiar Voice Option:** co-user records key phrases in their own voice for briefings and reminders
-- **Reminders & Safety:** medication, appliance shutoffs, appointment alerts
-
-### Phase 4: Polish & Future
-- Refine cognitive level system (adapts UI complexity, briefing depth, interaction style)
-- Co-user analytics dashboard (is recall improving? declining? mood trends?)
-- Multi co-user support (multiple family members managing one user)
-- Community features (connect users, support groups — with careful safety/moderation)
-- Accessibility pass (vision impairment, motor issues, hearing impairment)
-- Explore hardware integrations (interactive mirror, smart glasses) once app is solid
+- Rotate Supabase `service_role` key (flagged twice — security critical before any production use)
+- Verify Metro fix resolves iOS simulator startup crash (`resolver.resolveRequest` in `apps/mobile/metro.config.js`)
+- Drop openWakeWord ONNX model files into `apps/kiosk/public/openwakeword/` + set `NEXT_PUBLIC_WAKEWORD_ENABLED=1` to go hands-free
+- Realign Expo SDK 54 version drift (`npx expo install --fix -- --legacy-peer-deps`)
+- `AudioUnlockGate` re-shows on hard reload — add `if (isAudioUnlocked()) setUnlocked(true)` mount effect
 
 ---
 
-## Immediate Next Steps
+## Immediate Build Order
 
-1. ~~Document the plan~~ ✅
-2. Initialize React Native project with TypeScript
-3. Set up Supabase project and define database schema
-4. Build co-user onboarding flow (identity input, people, photo upload)
-5. Build AI photo processing pipeline (facial recognition, tagging, flagging)
-6. Build co-user verification queue
-7. Build the "Start My Day" briefing screen with TTS
-8. Test with real data, simplify UI relentlessly
-
----
-
-## Name Ideas
-
-*(TBD)*
+1. **DB migrations** — `is_primary_contact`, recurring event columns, `documents`, `document_chunks`, `user_narratives`, `narrative_chunks` tables; update `match_memories` RPC for new kinds
+2. **`process-narrative` Edge Function** — chunk + embed narrative; extract people/facts/events/sensitivity suggestions; return structured suggestions for co-user review
+3. **Co-user portal M2** — onboarding wizard: Create Profile → Write About Them (+ extraction review) → Life Facts → People → Events
+4. **Co-user portal M3** — People list/add/edit with primary contact toggle
+5. **Co-user portal M4** — Life Facts & Events with recurring event support
+6. **Co-user portal M5** — Media & Documents: photo grid + bulk document/image upload + AI batch processing
+7. **Co-user portal M6** — Flag Queue, Memo's Notes, Briefing Preview
+8. **Co-user portal M7** — Settings + proactive config
+9. **`navigate_to` tool** + PhotoBrowseScreen, CalendarScreen, PersonScreen
+10. **Daily nudges** (Layer 1 proactive) — `daily_nudges` table + nightly generation + kiosk Realtime subscription
+11. **Idle suggestions** (Layer 2) + `generate-nudge` Edge Function
+12. **Phase 2** — voice journaling
