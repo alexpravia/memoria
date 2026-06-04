@@ -6,6 +6,5 @@
       "@memoria/core": ["../../packages/core/src/index.ts"],
       "@memoria/core/*": ["../../packages/core/src/*"]
     }
-  },
-  "exclude": ["supabase/functions"]
+  }
 }

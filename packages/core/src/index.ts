@@ -13,6 +13,7 @@ export * from "./tools";
 export * from "./embeddings";
 export * from "./memory";
 export * from "./briefing";
+export * from "./narrative";
 export * from "./sensitivity";
 export * from "./photoProcessing";
 export * from "./preferenceSignals";

@@ -427,6 +427,175 @@ The Reflexion and Self-Refine papers describe critique-revise loops that improve
 
 ---
 
+### Theme K: Voice-Triggered Navigation Agents
+
+**What this means for Memoria:**
+
+The kiosk's voice loop currently handles navigation through a simple pattern-match in `matchNavIntent` — if the user says "go to briefing," the state machine fires a navigation intent. This is correct for simple commands but has a ceiling: it cannot handle compound, contextual, or ambiguous navigation requests that require understanding the user's intent before knowing where to go.
+
+The right architecture treats navigation as a **first-class agentic capability** — navigation is just another tool the assistant can call, like `search_memories` or `list_events`. When Memo determines that the answer to a question is best delivered by showing a screen (rather than speaking a sentence), it calls a navigation tool and the client acts on it.
+
+**Examples that require agentic navigation (not pattern matching):**
+- "Show me pictures of Maria" → Memo calls `show_photos(person_name: "Maria")` → kiosk navigates to photo gallery pre-filtered by Maria
+- "I want to look through my Christmas photos" → Memo calls `show_photos(tags: ["christmas"], date_hint: "december")` → filtered gallery
+- "What does my week look like?" → Memo calls `show_calendar(range: "week")` → calendar/events screen
+- "Tell me about my grandkids" → Memo calls `show_person(name: "grandchildren")` OR navigates to a people screen filtered by relationship
+- "Play my briefing" → Memo calls `start_briefing()` → briefing auto-advance begins
+- "Show me something from a long time ago" → Memo calls `show_photos(date_hint: "earliest")` → oldest verified photos
+
+**Recommended architecture:**
+
+Add a `navigation_intent` field to the `ask-assistant` response envelope (alongside `answer`, `photos`, `conversationId`):
+
+```typescript
+// ask-assistant response shape (add navigation field)
+{
+  answer: string,
+  photos: string[],
+  conversationId: string,
+  navigation?: {
+    screen: "photos" | "calendar" | "person" | "briefing" | "life_facts" | "home",
+    params?: {
+      person_name?: string,
+      person_id?: string,
+      tags?: string[],
+      date_range?: { start: string, end: string },
+      date_hint?: string
+    }
+  }
+}
+```
+
+New tools to add to the tool set (both `tools.ts` and `ask-assistant/index.ts`):
+
+```typescript
+// navigate_to — tell the client to go to a screen
+// Memo calls this when showing a screen is better than describing it
+{
+  name: "navigate_to",
+  description: "Navigate the user's screen to a specific section of the app. Call this when the user asks to SEE or GO TO something — photos, calendar, a person — rather than just hear about it.",
+  parameters: {
+    screen: { type: "string", enum: ["photos", "calendar", "person", "briefing", "life_facts"] },
+    person_name: { type: "string", description: "Filter photos/people by this person's name" },
+    tags: { type: "array", items: { type: "string" }, description: "Filter photos by these content tags" },
+    date_hint: { type: "string", description: "Natural language date hint: 'christmas', 'last summer', 'earliest', 'recent'" }
+  }
+}
+```
+
+The kiosk's `useVoiceLoop` already receives the full response from `askAssistant`. Extend it to check `response.navigation` — if present, fire the navigation side-effect (React Router `push`) after speaking the acknowledgment ("Here are your photos of Maria!").
+
+**Why this is better than pattern matching:**
+- Memo can decide navigation based on UNDERSTANDING, not keywords. "I miss my daughter" can trigger `show_photos(person_name: "daughter")` even though it contains no navigation keywords.
+- Compound intent: Memo can speak AND navigate simultaneously — not mutually exclusive.
+- The same `ask-assistant` Edge Function serves both kiosk and future mobile app — navigation intents are just ignored on platforms that don't implement them yet.
+- The tool call approach means the navigation is logged, traceable, and preference-signal-eligible (co-user can see "Memo navigated to photos of Maria 4 times this week").
+
+**Kiosk screens needed to support this (implementation order):**
+1. `PhotoBrowseScreen` — filterable photo grid (by person, tag, date range); large tiles, voice captions, auto-read on entry
+2. `CalendarScreen` — week/day view of events; each event readable aloud on tap or auto-advance
+3. `PersonScreen` — single person profile: photo, name, relationship, key facts, photos together; fully TTS'd
+4. Briefing is already implemented; just add the `navigate_to` trigger path
+
+---
+
+### Theme L: Proactive Engagement & Ambient Presence
+
+**The core problem:**
+
+Memory-care patients forget that tools exist. A device that only responds to requests will go unused — because the user forgets it's there. Memoria's kiosk must not wait to be asked. It must be an **ambient presence** that initiates contact throughout the day, drawing the user back into the loop before they drift too far out.
+
+This is one of the most important architectural decisions in the entire product. The morning briefing is good. A device that also whispers "You have lunch with your daughter in an hour" at 11am is life-changing.
+
+**Layers of proactive engagement (in priority order):**
+
+**Layer 1 — Scheduled voice nudges (calendar-driven)**
+When `generate-briefing` runs nightly, it also generates a `daily_nudge_schedule` — a list of timestamped prompts for the day, derived from the user's events, preferences, and recent activity. The kiosk checks this schedule and speaks nudges at the right times.
+
+Examples:
+- "Good afternoon, [name]. Just a reminder — David is coming for dinner at 6 tonight. Here's a photo of him."
+- "It's almost 3. You have a doctor's appointment at [location] today."
+- "Good evening. You did a lot today. Your briefing for tomorrow will be ready in the morning."
+
+Implementation:
+- New `daily_nudges` table: `(user_id, scheduled_for timestamptz, text, tts_url, delivered bool)`
+- `generate-briefing` populates this alongside slides (same nightly run)
+- Kiosk polls or uses Supabase Realtime to watch for undelivered nudges with `scheduled_for <= now()`
+- On trigger: speak the nudge via TTS, mark delivered
+
+**Layer 2 — Idle-state suggestions (ambient awareness)**
+When the kiosk has been idle (no voice interaction) for 3-5 minutes, the orb animates gently and Memo offers something unprompted. This is not an interruption — it's a gentle presence signal.
+
+Examples (randomized, non-repetitive, pulled from real DB content):
+- "Would you like to hear about your grandchildren?"
+- "Here's a photo from last summer that you might enjoy." [shows photo, reads caption]
+- "You have three events coming up this week. Want me to tell you about them?"
+- "I'm here if you need anything."
+
+Implementation:
+- Idle timer in `useVoiceLoop` — tracks time since last interaction
+- On idle timeout: call a new `generate-nudge` Edge Function with `type: "idle"`, which generates a contextually appropriate prompt using the user's real DB content
+- Speak the suggestion; if user doesn't respond in 10 seconds, return to idle without pressing further
+- Cooldown: don't trigger again for at least 20 minutes after an idle suggestion
+
+**Layer 3 — Memory surfacing ("This Day in Your Life")**
+Unprompted, once per day at a configurable time (e.g., 2pm), Memo surfaces a memory: a verified photo with TTS caption, or a recalled event from a year or more ago.
+
+- "I found something from three years ago. [shows photo] This is you and Maria at Thanksgiving 2022. She looks so happy."
+- Pulled from `match_memories` with a date filter for "today's date, past years"
+- Co-user can configure whether this feature is on, and what time it fires
+
+**Layer 4 — Emotional check-ins**
+Once per day (typically morning or evening), Memo asks how the user is feeling and actually records the response.
+
+- "How are you feeling today?" → user responds → Memo records the sentiment → if distressed, flags for co-user review
+- This feeds into the Phase 2 mood/tone awareness system
+- Simple: one question, one answer, graceful if the user doesn't engage
+
+**Layer 5 — Re-engagement after long silence**
+If the kiosk has been completely silent for over 2 hours (user fell asleep, left the room, etc.), a soft wake chime plays and Memo speaks a brief re-orientation message:
+
+- "Welcome back. It's 3:15 in the afternoon. Is there anything you'd like to know?"
+- Time-of-day aware: afternoon → afternoon message; evening → evening message
+
+**Key design constraints:**
+- **Never aggressive.** Every proactive touch must feel gentle and optional. If the user ignores a nudge, Memo returns to idle — it never repeats the same prompt twice in a row.
+- **Fully TTS'd.** Every proactive message is spoken, not shown as text. The user should not need to look at the screen to receive it.
+- **Content is real, not generic.** Idle suggestions must reference actual events, people, and photos from the user's DB — not generic filler. "Would you like to hear about your grandchildren?" only fires if there's real content about grandchildren.
+- **Co-user controlled.** Each proactive layer can be individually enabled/disabled in the co-user dashboard with a quiet/active/off setting.
+
+**New DB schema:**
+```sql
+-- Scheduled nudges (generated nightly alongside briefing)
+CREATE TABLE daily_nudges (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid REFERENCES users(id),
+  scheduled_for timestamptz NOT NULL,
+  text text NOT NULL,
+  tts_url text,
+  nudge_type text CHECK (nudge_type IN ('event_reminder', 'evening_wrap', 'morning_greeting', 'custom')),
+  delivered bool DEFAULT false,
+  delivered_at timestamptz,
+  created_at timestamptz DEFAULT now()
+);
+
+-- Proactive engagement settings (per co-user config)
+ALTER TABLE co_users ADD COLUMN proactive_settings jsonb DEFAULT '{
+  "idle_suggestions": true,
+  "idle_timeout_minutes": 5,
+  "memory_surfacing": true,
+  "memory_surfacing_time": "14:00",
+  "emotional_checkins": true,
+  "checkin_time": "09:30",
+  "reengagement_after_hours": 2
+}'::jsonb;
+```
+
+**New Edge Function: `generate-nudge`**
+Called by the kiosk when idle timeout fires. Takes `user_id` and `type: "idle" | "memory" | "checkin"`. Queries the DB for real content, generates a contextually appropriate message, returns `{ text, photos?, navigation? }`. The nudge can itself trigger a navigation (idle suggestion → show photos) if appropriate.
+
+---
+
 ## Part 2: Prioritized Implementation Roadmap
 
 ### Quick Wins (1-3 days, highest ROI)
@@ -453,20 +622,35 @@ The Reflexion and Self-Refine papers describe critique-revise loops that improve
 | 13 | Dynamic tool selection by question type | ask-assistant Edge Function, keyword classification |
 | 14 | Two-pass photo people verification | process-photo Edge Function |
 
+### Medium-Term — Navigation & Engagement (parallel track)
+
+| # | Change | Notes |
+|---|--------|-------|
+| 15 | `navigate_to` tool in ask-assistant + client handler | New tool definition in tools.ts + ask-assistant/index.ts; kiosk useVoiceLoop reads `navigation` response field |
+| 16 | PhotoBrowseScreen with person/tag/date filtering | Kiosk screen, voice-announced on entry, supports navigate_to params |
+| 17 | CalendarScreen (event list, voice-readable) | Kiosk screen; navigate_to `calendar` intent routes here |
+| 18 | PersonScreen (profile + photos together) | Kiosk screen; navigate_to `person` routes here |
+| 19 | `daily_nudges` table + nightly generation in generate-briefing | Schema + Edge Function extension; kiosk Realtime subscription fires TTS |
+| 20 | Idle-state suggestion engine in useVoiceLoop | Idle timer → generate-nudge Edge Function → speak + optional navigate |
+| 21 | generate-nudge Edge Function | New Edge Function: idle/memory/checkin types; returns text + optional navigation |
+| 22 | Proactive settings UI in co-user portal (M7) | Per-layer toggles: idle suggestions, memory surfacing, check-ins, re-engagement |
+
 ### Long-Term (Phase 2+ or 1+ month)
 
 | # | Change | Notes |
 |---|--------|-------|
-| 15 | People key_facts chunking (split long facts) | Schema change, new people_chunks table |
-| 16 | LLM re-ranking for top-K results | Second LLM call in search_memories handler |
-| 17 | Facial recognition via AWS Rekognition | External API integration, replaces GPT guessing |
-| 18 | Memory consolidation cron job | Weekly Reflexion-style dedup pass on assistant_memory |
-| 19 | Preference signals table + logging | Seeds eventual fine-tuning capability |
-| 20 | Langfuse observability integration | Traces, scores, dashboards |
-| 21 | Document pipeline (Docling → chunk → embed) | Full new pipeline, Phase 3/4 Memoria feature |
-| 22 | Self-refinement pass for briefings | Extra LLM call, async, quality improvement |
-| 23 | Promptfoo prompt regression suite | Dev process improvement, pre-deploy gate |
-| 24 | Familiar voice cloning architecture | Phase 3 feature, ElevenLabs or similar |
+| 23 | People key_facts chunking (split long facts) | Schema change, new people_chunks table |
+| 24 | LLM re-ranking for top-K results | Second LLM call in search_memories handler |
+| 25 | Facial recognition via AWS Rekognition | External API integration, replaces GPT guessing |
+| 26 | Memory consolidation cron job | Weekly Reflexion-style dedup pass on assistant_memory |
+| 27 | Preference signals table + logging | Seeds eventual fine-tuning capability |
+| 28 | Langfuse observability integration | Traces, scores, dashboards |
+| 29 | Document pipeline (Docling → chunk → embed) | Full new pipeline, Phase 3/4 Memoria feature |
+| 30 | Self-refinement pass for briefings | Extra LLM call, async, quality improvement |
+| 31 | Promptfoo prompt regression suite | Dev process improvement, pre-deploy gate |
+| 32 | Familiar voice cloning architecture | Phase 3 feature, ElevenLabs or similar |
+| 33 | Memory surfacing ("This Day in Your Life") cron | Daily scheduled content surfacing from historical DB records |
+| 34 | Emotional check-in system (mood logging + co-user flagging) | Phase 2 prerequisite; one question/day, sentiment stored, distress flagged |
 
 ---
 
@@ -768,6 +952,12 @@ These are distilled from the entire atlas and apply to every AI decision in Memo
 
 7. **The co-user is the quality gate.** Flag aggressively. Better to send something to the co-user for review than to let an uncertain answer reach the patient. The flag queue is the safety net — use it as intended.
 
+8. **Navigation is a tool, not a pattern match.** When the user's intent is to SEE something, the agent should call a `navigate_to` tool — not just speak a description. Showing is almost always better than telling for a visual medium. The kiosk's voice loop is the delivery layer; the agent decides what to deliver.
+
+9. **Proactive presence is as important as reactive correctness.** The best AI assistant for a memory-care patient is not one that gives perfect answers on demand — it's one the patient remembers to use. Scheduled nudges, idle suggestions, and memory surfacing must be treated as first-class features, not nice-to-haves. The AI should seek the patient out, gently and regularly.
+
+10. **Every proactive touch must be grounded in real content.** Idle suggestions, memory surfacing, and nudges must reference actual events, people, and photos from the patient's database. Generic filler ("Have a nice day!") is worse than silence — it teaches the patient that Memo has nothing real to say.
+
 ---
 
-*End of LLM-plan.md — v1.0, May 30, 2026*
+*End of LLM-plan.md — v1.1, June 3, 2026 (added Themes K & L: Voice Navigation Agents, Proactive Engagement)*
