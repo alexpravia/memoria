@@ -9,7 +9,15 @@
     "test": "npm run test --workspace=packages/core && npm run test --workspace=apps/kiosk",
     "check": "npm run typecheck --workspace=apps/mobile && npm run typecheck --workspace=apps/kiosk && npm run test"
   },
+  "dependencies": {
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
   "devDependencies": {
     "@types/react": "~18.3.0"
+  },
+  "overrides": {
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
   }
 }

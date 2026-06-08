@@ -83,6 +83,26 @@ Memoria is a real-time context generator that helps people with Alzheimer's, dem
 - **Phase 3:** 🔜 Cooking assist, brain stimulation, photo exploration, familiar voice option
 - **Phase 4:** 🔜 Cognitive level refinement, analytics, community, hardware exploration
 
+## Model Selection — Required Before Every Task
+
+Before starting any task, state which model is appropriate and why. Default rules:
+
+| Use | When |
+|-----|------|
+| **Haiku** | Quick lookups, reading a file, single-line edits |
+| **Sonnet** (default) | Standard UI screens, new routes, unit tests, features already architecturally designed |
+| **Opus** | Any Edge Function change (`ask-assistant`, `generate-briefing`, `generate-nudge`), new DB schema, auth/RLS, debugging non-obvious bugs, concurrent/async logic, any new agentic system |
+| **Opus + Ultracode** | Pre-push reviews (`/code-review ultra`), security audits, large cross-cutting migrations |
+
+**Memoria-specific assignments:**
+- Kiosk portal screens M2–M7, `navigate_to` client handler, PhotoBrowse/Calendar/Person screens → **Sonnet**
+- `ask-assistant`, `generate-briefing`, `generate-nudge`, proactive engine, RLS changes, voice loop → **Opus**
+- Pre-push after big session, security audit → **Ultracode**
+
+**Mid-implementation interrupt rule:** If on Sonnet and the task turns out to touch safety-critical paths, auth, non-obvious async logic, or an unclear bug — stop and flag it: *"This is hitting [reason] — safer on Opus. Switch?"*
+
+---
+
 ## Instructions for Working on This Project
 - **Read `progress.md` before starting any work** — it is the authoritative log of what has been done
 - Never update `progress.md` during normal implementation flow; only update it when the user explicitly asks at the end of a session

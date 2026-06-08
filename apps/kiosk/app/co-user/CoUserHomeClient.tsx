@@ -4,6 +4,7 @@ import "@/lib/supabase";
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useAuth, supabase, getBriefingForDate, type BriefingStatus } from "@memoria/core";
 import Icon, { type IconName } from "@/components/Icon";
 
@@ -42,6 +43,7 @@ interface Stats {
 
 export default function CoUserHomeClient() {
   const { userId } = useAuth();
+  const router = useRouter();
   const [patientName, setPatientName] = useState<string | null>(null);
   const [stats, setStats] = useState<Stats>({
     lifeFacts: 0,
@@ -108,32 +110,16 @@ export default function CoUserHomeClient() {
     })();
   }, [userId]);
 
-  // ── No userId → onboarding not complete ──────────────────────────
+  // ── No userId → redirect to onboarding wizard ────────────────────
+  useEffect(() => {
+    if (!userId) router.replace("/co-user/onboard");
+  }, [userId, router]);
+
   if (!userId) {
     return (
-      <main
-        style={{
-          maxWidth: 560,
-          margin: "0 auto",
-          padding: "80px 32px",
-          textAlign: "center",
-        }}
-      >
-        <Icon name="tip" size={48} color="var(--color-primary-soft)" />
-        <h2
-          style={{
-            fontSize: "var(--type-h2)",
-            color: "var(--color-fg-strong)",
-            margin: "16px 0 8px",
-          }}
-        >
-          Account setup needed
-        </h2>
-        <p style={{ color: "var(--color-fg-muted)", lineHeight: 1.6 }}>
-          Your account hasn&apos;t been linked to a patient profile yet.
-          Complete setup using the Memoria mobile app, then return here.
-        </p>
-      </main>
+      <div style={{ display: "flex", justifyContent: "center", padding: 80, color: "var(--color-fg-muted)", fontSize: "var(--type-lg)" }}>
+        Loading…
+      </div>
     );
   }
 

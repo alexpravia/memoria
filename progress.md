@@ -366,3 +366,44 @@ The shared backend folder was moved from `apps/mobile/supabase/` to the **repo r
 - Build co-user portal **M2** (onboarding wizard incl. "Write About Them" + extraction review), then deploy the data layer and test the narrative flow end-to-end in the web-app
 - Continue M3 (people + primary-contact toggle), M4 (life facts + recurring events UI), M5 (photos + document upload — resolve the Deno extraction decision first), M6 (flag queue, Memo's Notes, briefing preview), M7 (settings + proactive config)
 - Then the parallel kiosk track: `navigate_to` tool + PhotoBrowse/Calendar/Person screens, and the Layer-1 proactive nudge engine
+
+---
+
+## June 8, 2026
+
+### Model Selection Rules — CLAUDE.md
+
+A model selection guide was added directly to `CLAUDE.md` so it's always in context at the start of every session. Rules cover Haiku/Sonnet/Opus/Ultracode tiers, Memoria-specific assignments (portal screens → Sonnet, Edge Function changes → Opus, etc.), and a mid-implementation interrupt rule requiring a model-switch flag when a task turns safety-critical or architecturally novel mid-build.
+
+### Co-User Portal — M2 Onboarding Wizard
+
+A full 5-step onboarding wizard was built at `/co-user/onboard` for new co-users who haven't yet set up a patient profile.
+
+**Steps:**
+1. **Profile** — creates the `users` row (patient) + `co_users` row (linking co-user's auth), calls `setUserId()` to update auth context. Fields: full name, DOB, location, relationship, emergency phone.
+2. **Story ("Write About Them")** — freeform narrative textarea → `saveNarrative()` → `process-narrative` Edge Function → suggestion review panel with checkboxes for people, life facts, events, and sensitivity hints (hints shown as informational only, not auto-saved). Accepted items inserted + embedded immediately.
+3. **Life Facts** — chip-based builder with enter-key support. Saves + embeds each fact.
+4. **People** — name + relationship form with avatar initials. Saves + embeds.
+5. **Events** — title + date + one-time/recurring/routine type selector. "Finish Setup" saves and redirects to dashboard.
+
+`CoUserHomeClient` updated to redirect to `/co-user/onboard` (via `useRouter`) when `userId` is null, replacing the dead "Account setup needed" message. All steps except Profile are skippable. 147 tests passing, TypeScript clean.
+
+### Vercel Deployment
+
+The kiosk web app was deployed to Vercel. Root `vercel.json` configures the monorepo build: `npm install --legacy-peer-deps` from root, `npm run build --workspace=apps/kiosk`, output from `apps/kiosk/.next`.
+
+**Deployment issue resolved:** React couldn't be found during the Vercel build because npm workspace hoisting placed React@19.2.4 (kiosk) and React@19.1.0 (mobile) in separate workspace-local `node_modules` directories that Vercel's environment doesn't create. Fixed by adding `react` and `react-dom` as direct dependencies of the root `package.json` and adding `overrides` to pin both to `19.2.4`, guaranteeing React is at root `node_modules` where Next.js can find it.
+
+**Live URL:** https://memoria-web-seven.vercel.app  
+**Vercel project:** `alex-pravias-projects/memoria-web`  
+**Future deploys:** `npx vercel --prod` from repo root.
+
+### Flags for Next Session
+- `AudioUnlockGate` remount bug still open (re-shows on hard reload within same session) — low priority
+- The onboard wizard step 2 ("Write About Them") accepted events have no date from the narrative extraction — they default to today. Co-user should be able to edit dates after setup via M4 (Events screen).
+- The Vercel project is named `memoria-web-seven` — rename in Vercel dashboard → Project Settings → General if a cleaner URL is wanted.
+
+### Next Steps
+- **Test the live deployment end-to-end:** sign in as a co-user, run through the M2 wizard (profile → story → facts → people → events), verify dashboard loads with correct stats, confirm the narrative was processed and suggestions appeared correctly.
+- Continue building M3 (people list + add + primary-contact toggle), M4 (life facts list + recurring events UI), M5 (photos + document upload), M6 (flag queue, Memo's Notes, briefing preview), M7 (settings + proactive config).
+- Kiosk track (parallel): `navigate_to` tool + PhotoBrowse/Calendar/Person screens, Layer-1 proactive nudge engine.
