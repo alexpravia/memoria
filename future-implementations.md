@@ -44,6 +44,23 @@ hardware exploration.
 
 ---
 
+## Document Text Extraction — v1 Limitations
+
+**Current v1 approach (not long-term):**
+- `.txt` files: extracted directly in the browser as plain text.
+- PDFs: `pdfjs-dist` (client-side) extracts text from digitally-created PDFs; scanned/image-based PDFs yield no text and are stored without extraction.
+- Images uploaded as documents: stored but text is not extracted (no OCR in v1).
+- DOCX/other formats: rejected with an unsupported-format message.
+
+**Why this is temporary:** Client-side extraction is fragile, has no retry logic, and cannot handle OCR. The correct long-term solution is a `process-document` Edge Function that uses the OpenAI vision API for OCR on scanned PDFs and images, returns structured text + summary, and runs asynchronously so large documents don't block the upload UI.
+
+**How to upgrade:**
+1. Build `supabase/functions/process-document/index.ts` — accepts `{ document_id, file_url, file_type }`, downloads the file (via Storage URL), extracts text (pdf.js for digital PDFs, vision for images/scanned), chunks, embeds, updates `documents.processing_status`.
+2. On document upload in the co-user portal, after inserting the `documents` row, call `supabase.functions.invoke('process-document', ...)` asynchronously and poll or subscribe for status.
+3. Remove client-side `pdfjs-dist` dependency and extraction code from `DocumentUploadClient.tsx`.
+
+---
+
 ## AI Pipeline — Phase 5 (LLM-plan.md)
 Intentionally paused. Do facial recognition first (AWS Rekognition — the GPT
 people-ID is a stub; the `media_people` schema is ready), then:

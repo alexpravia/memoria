@@ -216,8 +216,20 @@ export default function CoUserHomeClient() {
             subtitle={`${stats.events} events`}
           />
           <ActionCard
-            href="/co-user/memory"
+            href="/co-user/story"
             icon="notes"
+            title="Write About Them"
+            subtitle="Narrative for Memo"
+          />
+          <ActionCard
+            href="/co-user/documents"
+            icon="tip"
+            title="Documents"
+            subtitle="Uploaded reference files"
+          />
+          <ActionCard
+            href="/co-user/memory"
+            icon="sparkle"
             title="Memo's Notes"
             subtitle="AI-learned memories"
           />
