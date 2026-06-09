@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useAuth } from "@memoria/core";
 import { Logo } from "@/components/Logo";
 
-export function SignIn() {
+export function SignIn({ onSwitchToSignUp }: { onSwitchToSignUp?: () => void }) {
   const { signIn } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -151,6 +151,24 @@ export function SignIn() {
         <br />
         If you need help signing in, please ask them.
       </p>
+
+      {onSwitchToSignUp && (
+        <button
+          type="button"
+          onClick={onSwitchToSignUp}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--color-fg-muted)",
+            fontSize: "var(--type-md)",
+            cursor: "pointer",
+            textDecoration: "underline",
+            padding: 8,
+          }}
+        >
+          Caring for someone? Create a caregiver account
+        </button>
+      )}
     </div>
   );
 }
