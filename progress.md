@@ -407,3 +407,49 @@ The kiosk web app was deployed to Vercel. Root `vercel.json` configures the mono
 - **Test the live deployment end-to-end:** sign in as a co-user, run through the M2 wizard (profile → story → facts → people → events), verify dashboard loads with correct stats, confirm the narrative was processed and suggestions appeared correctly.
 - Continue building M3 (people list + add + primary-contact toggle), M4 (life facts list + recurring events UI), M5 (photos + document upload), M6 (flag queue, Memo's Notes, briefing preview), M7 (settings + proactive config).
 - Kiosk track (parallel): `navigate_to` tool + PhotoBrowse/Calendar/Person screens, Layer-1 proactive nudge engine.
+
+---
+
+## June 9, 2026
+
+### Co-User Portal — M3–M7 Complete
+
+All remaining co-user portal screens were built, completing the full management dashboard for caregivers. Each route follows the established pattern: a `page.tsx` server component wrapping a `Suspense` boundary + a `*Client.tsx` client component. All data writes call `embedAndStore` after insert to keep RAG current.
+
+**M3 — People (`/co-user/people`):** list with gradient-initial avatar circles, sensitive chip indicator, edit and delete actions. `/co-user/people/add` — form with full name, relationship, phone, email, emotional notes, and key facts chips (enter-to-add). `/co-user/people/[id]/edit` — same form pre-populated, with is_sensitive toggle.
+
+**M4 — Life Facts & Events:** `/co-user/life-facts` — list with lavender bullet dots and delete. `/co-user/life-facts/add` — bulk entry: type + Enter to build a list, then save all at once; category chip selector (Career/Family/Hobby/Health/Education/Home/Travel/Other). `/co-user/events` — split into Upcoming/Past sections, date chip (month abbrev + day number), type badge (One-time/Recurring/Routine). `/co-user/events/add` — title, description, date picker, event type buttons, recurrence select. `/co-user/calendar/import` — `.ics` file parser (splits on VEVENT, extracts SUMMARY/DTSTART), filters to ±1 month → +3 months window, checkbox selection UI.
+
+**M5 — Photos (`/co-user/photos`):** grid with filter tabs (All/Verified/Pending) using live counts. Status dot per tile (green = verified, yellow border = pending). Inline lightbox: fixed overlay, img contain, verify/mark-pending/hide action buttons. `/co-user/photos/import` — drag-drop zone + multi-file input, per-file upload to Supabase Storage `photos` bucket, then `processPhotos()` from `@memoria/core` for AI pipeline. Status tile per file (uploading/processing/done/error).
+
+**M6 — AI & Review:** `/co-user/flags` — Supabase join query (`flag_queue → media`), Supabase returns joined media as an array, normalized to single object with `Array.isArray` guard. Approve/Reject/Hide buttons; approve → sets `media.verification_status = 'verified'`; reject/hide → `'hidden'`. Reviewed items shown/hidden toggle. `/co-user/memory` — uses `listMemoriesForCoUser`, `updateMemoryStatus`, `deleteMemory` from core; filter chips by MemoryKind (observation/preference/recurring_question/emotional_state/factual_correction); pin/suppress/restore/delete actions with importance dots (1–5). `/co-user/briefing` — today/tomorrow date toggle, `getBriefingForDate` + `resolveSlidePhotos`, generate/regenerate buttons, slide viewer with dot nav, photo display, tts_text in italic, approve button calls `approveBriefing(briefing.id, coUserId)` (both args required — caught via TS check).
+
+**M7 — Settings:** `/co-user/filters` — inline add form with type selector (topic/person/time_period), value input, optional date range for time_period; direct CRUD on `sensitivity_filters`. `/co-user/emergency-contact` — updates `co_users.phone`. `/co-user/setup-login` — creates patient auth account via `supabase.auth.signUp`, updates `users.auth_id`, warns if credentials already exist.
+
+### Co-User Portal — Write About Them & Documents
+
+Two additional portal pages were built and the dashboard was updated to link to them.
+
+**`/co-user/story`** — standalone "Write About Them" narrative editor. Loads the existing narrative via `getNarrative(userId)` on mount. Large textarea for freeform prose. "Save & Process" calls `saveNarrative(userId, text)` which invokes the `process-narrative` Edge Function (chunk → embed → extract suggestions). On success, shows a tabbed suggestions panel: People / Life Facts / Events / Sensitivity. Each suggestion has an "Add" button that promotes it directly to the corresponding database table with embeddings. Promoted items show a green "Added ✓" state. The editor tracks dirty state (save button disabled when unchanged).
+
+**`/co-user/documents`** — document list. Queries the `documents` table for the user, shows status badges (pending/processing/processed/failed), file type, size, date, and AI-generated summary when available. Delete button marks `processing_status = 'hidden'`. Links to upload page.
+
+**`/co-user/documents/upload`** — drag-drop file uploader with per-file pipeline: upload to Supabase Storage `documents` bucket → insert `documents` row (status: processing) → extract text client-side → chunk into ~500-char segments → embed each chunk via `embed` Edge Function → insert `document_chunks` rows → mark processed. Text extraction is v1 (not long-term — see `future-implementations.md`): `.txt` files read via `FileReader`, `.pdf` via dynamically-imported `pdfjs-dist` (digital PDFs only; scanned PDFs yield no text and are stored without chunks), images and other formats stored with a note in the summary. `pdfjs-dist@4.x` added to `apps/kiosk/package.json`; worker loaded from CDN to avoid SSR issues.
+
+**Dashboard updated:** "Write About Them" (`notes` icon) and "Documents" (`tip` icon) cards added to the Dashboard section of `CoUserHomeClient.tsx`. Memo's Notes card icon changed to `sparkle` to distinguish it from the narrative card.
+
+**`future-implementations.md`** — new "Document Text Extraction — v1 Limitations" section documenting the current approach (txt direct, pdfjs for digital PDFs, images/scanned stored without text) and the correct long-term fix: a `process-document` Edge Function that handles async extraction + OCR via vision API.
+
+**Storage:** The `documents` Supabase Storage bucket must be created manually (Storage → New bucket → name: `documents`, public: true) — it is not created by the SQL migration.
+
+### Flags for Next Session
+- `process-narrative` Edge Function and the updated `ask-assistant` still need to be deployed to the live Supabase project — the narrative save UI will call them but they won't work until deployed.
+- `add_primary_contact.sql` (is_primary_contact column on people) has not been confirmed deployed — check before building primary-contact UI.
+- Rotate the Supabase `service_role` key — still outstanding from May 30 / June 1 flags.
+- Document upload uses the client-side `documents` bucket; ensure RLS policies allow co-users to upload (currently RLS on the `documents` table exists but storage bucket policies are not yet written).
+
+### Next Steps
+- Deploy `process-narrative` and updated `ask-assistant` Edge Functions so the Story page works end-to-end.
+- Test the complete co-user portal end-to-end on the live Vercel deployment.
+- Kiosk patient track: `navigate_to` tool + PhotoBrowse/Calendar/Person screens (Sonnet).
+- Layer-1 proactive nudge engine — `generate-nudge` Edge Function (Opus required).
